@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PortWatch · AnyPS5 progress</title>
+<style>
+:root{
+  --bg:#05070d; --panel:#0b1120; --panel2:#0f1830; --line:#1b2745; --fg:#e8eefc; --muted:#8190b4; --dim:#4c5a7d;
+  --accent:#2f7bff; --accent2:#7fb0ff; --ok:#36d399; --warn:#f5b83d; --bad:#ff5d6c;
+  --r:14px; --gap:14px;
+  --num:"SF Pro Display","Segoe UI Variable Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg)}
+body{display:flex;flex-direction:column;min-height:100vh;
+  background:radial-gradient(1200px 500px at 10% -10%,#0d1f4a55,transparent 60%),radial-gradient(900px 400px at 100% 110%,#0b2a5a44,transparent 60%),var(--bg)}
+button,input,select{font:inherit;color:inherit}
+.tab, .icon-btn{background:none;border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--muted)}
+.tab:hover,.icon-btn:hover{color:var(--fg);border-color:var(--dim)}
+.tab[aria-selected="true"],.icon-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+header{display:flex;align-items:center;gap:10px;padding:14px 20px 4px;position:relative;z-index:40}
+.brand{display:flex;align-items:center;gap:10px;margin-right:4px}
+.brand svg{width:30px;height:30px}
+.brand h1{margin:0;font:700 20px/1 var(--num);letter-spacing:.01em}
+.brand h1 span{color:var(--accent2);font-weight:500}
+.brand small{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.spacer{flex:1}
+.status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-right:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.dot.ok{background:var(--ok);box-shadow:0 0 10px var(--ok)} .dot.busy{background:var(--warn)} .dot.err{background:var(--bad)}
+.menu{position:relative}
+.pop{position:absolute;right:0;top:calc(100% + 8px);background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:290px;box-shadow:0 12px 40px #000a;display:none;z-index:50}
+.pop.open{display:block}
+.pop a{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:8px;color:var(--fg);text-decoration:none;font-size:14px}
+.pop a small{color:var(--dim);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}
+.pop a:hover,.pop a:focus-visible{background:#16213d;outline:none}
+.pop p{margin:6px 12px 4px;color:var(--dim);font-size:11.5px;line-height:1.4}
+
+/* ---------- dashboard grid of tiles ---------- */
+main{flex:1;min-height:0;padding:10px 20px 20px;position:relative}
+main.grid{display:grid;gap:var(--gap);grid-template-columns:repeat(var(--cols),minmax(0,1fr));grid-template-rows:repeat(var(--rows),minmax(0,1fr))}
+main.flow{display:flex;flex-direction:column;gap:var(--gap)}
+.dt{position:relative;min-width:0;min-height:0;display:flex;border-radius:var(--r)}
+main.grid > .dt{container-type:size}
+main.flow{flex:none}
+main.flow .ring{width:min(36cqw,240px)} main.flow .big{font-size:clamp(28px,9cqw,72px)} main.flow .ring .pct b{font-size:clamp(16px,6cqw,40px)}
+main.flow > .dt{container-type:inline-size;min-height:340px;flex:none}
+.dt > .panel{flex:1}
+.dt > .panel[hidden]{display:none}
+.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;min-height:0;min-width:0;display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden}
+.panel h2{margin:0;font:600 13px/1.2 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px;cursor:zoom-in;user-select:none;min-width:0}
+.panel h2 .aside{margin-left:auto;letter-spacing:0;text-transform:none;font-weight:500;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dt.stacked > .panel{padding-bottom:30px}
+
+/* dots on a stacked tile */
+.tdots{position:absolute;left:0;right:0;bottom:6px;display:flex;justify-content:center;pointer-events:none;z-index:3}
+.tdots-in{pointer-events:auto;display:flex;align-items:center;gap:2px;background:#0a1328e6;border:1px solid var(--line);border-radius:999px;padding:0 6px;height:22px}
+.tdots button{appearance:none;border:0;background:none;width:18px;height:20px;padding:0;cursor:pointer;display:grid;place-items:center}
+.tdots button::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dim);transition:width .2s}
+.tdots button.on::before{background:var(--accent2);width:16px;border-radius:4px}
+.tdots button:hover::before{background:var(--fg)}
+.tdots .paused{font-size:10px;color:var(--dim);margin-left:4px;letter-spacing:.06em}
+
+/* expand one tile over the dashboard */
+.zbtn{margin-left:8px;flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--line);background:none;color:var(--dim);cursor:pointer;display:grid;place-items:center;padding:0;opacity:0;transition:opacity .15s}
+.dt:hover .zbtn,.zbtn:focus-visible,.dt.zoomed .zbtn{opacity:1}
+.zbtn:hover{color:var(--fg);border-color:var(--dim)}
+.zbtn svg{width:13px;height:13px}
+.dt.zoomed{position:fixed;inset:calc(var(--hdr,64px) + 8px) 14px 14px 14px;z-index:30;box-shadow:0 0 0 100vmax #05070df2;animation:zin .18s ease-out}
+.dt.zoomed > .panel{padding:26px 32px;gap:18px}
+.dt.zoomed.stacked > .panel{padding-bottom:40px}
+.dt.zoomed .panel h2{cursor:zoom-out;font-size:16px}
+@keyframes zin{from{transform:scale(.97);opacity:.6}to{transform:none;opacity:1}}
+body.has-zoom{overflow:hidden}
+.zoomed #hist .legend{font-size:14px}
+.zoomed #shader .brow{font-size:16px;grid-template-columns:minmax(140px,260px) 1fr minmax(90px,auto);gap:16px}
+.zoomed #shader .bar{height:12px} .zoomed #shader .sub{font-size:13px;margin-top:12px} .zoomed #shader .bars{gap:12px}
+.zoomed #libs .lib .nm{font-size:16px} .zoomed #libs .lib .ct{font-size:14px} .zoomed #libs .lib .bar{height:8px}
+.zoomed #libs .liblist{grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
+.zoomed #daily .dtable{font-size:15px} .zoomed #daily .dtable td{padding:8px 10px} .zoomed #daily .dtable .gb i{height:10px}
+.zoomed #daily .dsum .dbig{font-size:clamp(44px,8vh,96px)} .zoomed #daily .chip{font-size:15px;padding:6px 12px}
+.zoomed #hero .chip{font-size:16px;padding:7px 14px} .zoomed #hero .of{font-size:20px} .zoomed #hero .pr{font-size:16px}
+
+/* ---------- edit layout ---------- */
+.editbar{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 20px 0;padding:10px 12px;border:1px dashed #2f7bff88;border-radius:12px;background:#0b1530;font-size:13px;color:var(--muted)}
+body.editing .editbar{display:flex}
+.editbar .hint{flex:1;min-width:260px}
+.editbar .off{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.editbar .off b{color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.chipbtn{border:1px dashed var(--dim);background:none;border-radius:999px;padding:4px 10px;color:var(--fg);cursor:pointer;font-size:12.5px}
+.chipbtn:hover{border-color:var(--accent2);color:var(--accent2)}
+.tedit{position:absolute;inset:0;z-index:5;border:2px dashed #2f7bff99;border-radius:var(--r);background:#05070d99;display:flex;flex-direction:column;cursor:grab;touch-action:none;user-select:none}
+.tedit .bar1{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#0f1c3dee;border-radius:12px 12px 0 0;flex-wrap:wrap}
+.tedit .grip{color:var(--accent2);font-size:15px;line-height:1}
+.tedit .names{font:600 12.5px/1.2 var(--num);letter-spacing:.06em;color:var(--fg);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tedit .tb{border:1px solid var(--line);background:#0a1328;border-radius:7px;padding:3px 8px;font-size:12px;color:var(--muted);cursor:pointer}
+.tedit .tb:hover{color:var(--fg);border-color:var(--dim)}
+.tedit .tb.on{color:var(--ok);border-color:#1f6f50}
+.tedit .size{margin:auto;color:var(--dim);font-size:12px}
+.tedit .rz{position:absolute;right:0;bottom:0;width:26px;height:26px;cursor:nwse-resize;display:grid;place-items:end;padding:5px}
+.tedit .rz::after{content:"";width:12px;height:12px;border-right:3px solid var(--accent2);border-bottom:3px solid var(--accent2);border-radius:0 0 3px 0}
+.dt.dragging{z-index:20;opacity:.85;pointer-events:none}
+.dt.dragging .tedit{cursor:grabbing;border-color:var(--accent2)}
+.tedit.stack{border-color:var(--ok);background:#0b2a1fcc} .tedit.swap{border-color:var(--warn);background:#2a1f0acc}
+.tedit.stack::after,.tedit.swap::after{position:absolute;left:0;right:0;top:45%;text-align:center;font:800 20px var(--num);letter-spacing:.12em;text-transform:uppercase;pointer-events:none}
+.tedit.stack::after{content:"Stack here";color:var(--ok)} .tedit.swap::after{content:"Swap";color:var(--warn)}
+.ghost{border:2px solid var(--accent2);border-radius:var(--r);background:#2f7bff22;pointer-events:none;z-index:15}
+.ghost.bad{border-color:var(--bad);background:#ff5d6c22}
+
+/* hero: sizes follow the tile, so it fits wherever you put it */
+.hero-body{flex:1;display:flex;align-items:center;justify-content:center;gap:clamp(12px,5cqw,64px);min-height:0}
+.ring{position:relative;flex:none;width:min(44cqw,62cqh,480px);aspect-ratio:1}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .pct{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .pct b{font:700 clamp(16px,min(7.4cqw,10cqh),80px)/1 var(--num);font-variant-numeric:tabular-nums}
+.ring .pct span{font-size:clamp(11px,2.4cqw,16px);color:var(--muted);margin-top:4px}
+.hero-nums{display:flex;flex-direction:column;gap:6px;min-width:0}
+.big{font:700 clamp(26px,min(10cqw,16cqh),130px)/1 var(--num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.of{color:var(--muted);font-size:14px}
+@container (max-width:380px){ .hero-body{flex-direction:column;gap:12px} .ring{width:min(58cqw,40cqh)} .big{font-size:clamp(26px,14cqw,52px)} .hero-nums{align-items:center;text-align:center} .hero-nums .chips{justify-content:center} }
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1px solid var(--line);background:#0a1328;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
+.chip b{color:var(--fg);font-variant-numeric:tabular-nums}
+.chip.up b{color:var(--ok)}
+.pr{font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px}
+.pr b{color:var(--accent2)}
+
+/* history */
+.chart{flex:1;min-height:120px;position:relative}
+.chart svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);align-items:center;flex-wrap:wrap}
+.rng{padding:2px 9px;font-size:11.5px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.tip{position:absolute;pointer-events:none;background:#0a1226f2;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12px;white-space:nowrap;display:none;z-index:5;box-shadow:0 6px 20px #0008}
+.tip b{font-variant-numeric:tabular-nums}
+
+/* daily */
+.dsum{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.dsum .dbig{font:700 clamp(28px,2.8vw,44px)/1 var(--num);color:var(--ok);font-variant-numeric:tabular-nums}
+.dsum .dbig.zero{color:var(--dim)}
+.dsum .dlbl{color:var(--muted);font-size:12.5px;margin-top:6px}
+.dsum .chips{margin-top:0}
+.dtable{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.dtable th{color:var(--dim);font-weight:600;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;text-align:right;padding:4px 6px;position:sticky;top:0;background:var(--panel)}
+.dtable th:first-child,.dtable td:first-child{text-align:left}
+.dtable td{padding:5px 6px;border-bottom:1px solid #121b33;text-align:right;white-space:nowrap}
+.dtable td.d{color:var(--muted)} .dtable td.d b{color:var(--fg);font-weight:500}
+.dtable td.g{width:44%}
+.dtable .gb{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.dtable .gb i{display:block;height:7px;border-radius:99px;background:var(--accent);min-width:2px}
+.dtable tr.idle td{color:var(--dim)} .dtable tr.idle td.d b{color:var(--dim)}
+.up{color:var(--ok)} .down{color:var(--bad)}
+
+/* shader */
+.bar{height:8px;border-radius:99px;background:#16213d;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.bar i.full{background:var(--ok)}
+.bars{display:flex;flex-direction:column;gap:8px}
+.brow{display:grid;grid-template-columns:minmax(90px,140px) 1fr minmax(56px,auto);gap:10px;align-items:center;font-size:12.5px}
+.brow .n{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .c{text-align:right;font-variant-numeric:tabular-nums}
+.sub{font:600 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:4px 0 8px}
+.scroll{overflow:auto;min-height:0;flex:1;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+
+/* libs */
+.libbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.libbar input{background:#0a1328;border:1px solid var(--line);border-radius:999px;padding:5px 12px;min-width:140px;flex:1;max-width:260px;outline:none}
+.libbar input:focus{border-color:var(--accent)}
+.liblist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:2px 22px;align-content:start}
+.lib{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;gap:4px 10px;padding:7px 4px;border-bottom:1px solid #121b33}
+.lib .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+.lib .ct{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.lib .ct b{color:var(--fg)}
+.lib .bar{grid-column:1/-1;height:6px}
+.delta{color:var(--ok);font-weight:600;margin-left:6px}
+.empty{color:var(--dim);font-size:13px;padding:10px 4px}
+
+/* map */
+.tiles{display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start}
+.tile{border-radius:3px;cursor:default;outline:1px solid #ffffff08}
+.tile:hover{outline:2px solid #fff}
+.maplegend{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim)}
+.maplegend .grad{flex:1;max-width:160px;height:6px;border-radius:99px;background:linear-gradient(90deg,#1a2442,#1d4fb8,#2f7bff,#36d399)}
+
+.banner{margin:6px 20px 0;padding:10px 14px;border-radius:10px;border:1px solid #5a2330;background:#2a0f17;color:#ffc2ca;font-size:13px;display:none}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(30px);opacity:0;background:#0b2a1f;border:1px solid #1f6f50;color:#bff5dc;padding:12px 18px;border-radius:12px;font-weight:600;transition:.4s;z-index:60;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.foot{color:var(--dim);font-size:11px;padding:0 20px 12px;display:flex;gap:16px;flex-wrap:wrap}
+.foot a{color:var(--muted)}
+
+dialog{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:20px;min-width:340px}
+dialog::backdrop{background:#000a}
+dialog h4{margin:16px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+dialog label{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:10px 0;font-size:14px}
+dialog select,dialog input[type=text]{background:#0a1328;border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+dialog .discard{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #5a2330;background:#2a0f17;border-radius:10px;font-size:13px;color:#ffc2ca}
+dialog .discard[hidden]{display:none} dialog .discard span{flex:1;min-width:180px}
+
+@media (min-width:2200px) and (max-aspect-ratio:21/9){ :root{font-size:17px} .panel{padding:20px 24px} }
+@media (max-width:1100px){ #editBtn{display:none} }
+@media (max-width:700px){
+  main{padding:10px}
+  header{padding:12px 12px 0;flex-wrap:wrap} .status .lbl{display:none} .brand small{display:none}
+  main.flow > .dt{min-height:0} .panel{overflow:visible} .panel > *{flex:none !important} .chart{height:240px} .panel .scroll{max-height:60vh} .panel h2 .aside{display:none}
+  .hero-body{flex-direction:column;align-items:flex-start;flex:none} .ring{width:150px}
+}
+@media (min-width:1101px){ body{height:100vh;overflow:hidden} }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="9" fill="#0f1c3d" stroke="#2f7bff" stroke-width="1.5"/><circle cx="16" cy="16" r="8.5" fill="none" stroke="#1d3a7a" stroke-width="3"/><path d="M16 7.5a8.5 8.5 0 0 1 8.2 10.7" fill="none" stroke="#7fb0ff" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="16" r="2.4" fill="#7fb0ff"/></svg>
+    <div><h1>PortWatch <span>· AnyPS5</span></h1><small>PS5 emulator reimplementation progress</small></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="status"><i class="dot" id="dot"></i><span class="lbl" id="statusText">Loading…</span></div>
+  <button class="icon-btn" id="editBtn" title="Move, resize and stack tiles">Edit layout</button>
+  <div class="menu">
+    <button class="icon-btn" id="creditsBtn" aria-haspopup="true" aria-expanded="false" aria-controls="creditsPop">Credits</button>
+    <div class="pop" id="creditsPop" role="menu">
+      <a role="menuitem" href="https://boykopovar.github.io/AnyPS5/progress.html" target="_blank" rel="noopener">AnyPS5 progress page<small>boykopovar.github.io/AnyPS5/progress.html</small></a>
+      <a role="menuitem" href="https://github.com/boykopovar/AnyPS5" target="_blank" rel="noopener">AnyPS5 on GitHub<small>github.com/boykopovar/AnyPS5</small></a>
+      <p>All progress data comes from the AnyPS5 project's public feed. It measures reimplemented source code, not which games run.</p>
+    </div>
+  </div>
+  <button class="icon-btn" id="refreshBtn" title="Refresh now (R)">Refresh</button>
+  <button class="icon-btn" id="setBtn" title="Settings">Settings</button>
+</header>
+<div class="banner" id="banner"></div>
+<div class="editbar" id="editbar">
+  <span class="hint">Drag a tile to move it. Drop it on the <b>middle</b> of another tile to <b>stack</b> them (they take turns), or on its <b>edge</b> to swap. Drag the corner to resize.</span>
+  <span class="off" id="offList"></span>
+  <button class="icon-btn" id="resetLayout">Reset layout</button>
+  <button class="icon-btn on" id="doneBtn">Done</button>
+</div>
+
+<main id="main">
+  <section class="panel" id="hero" data-name="Overview" aria-label="Overall progress">
+    <h2>System libraries <span class="aside" id="feedAge"></span></h2>
+    <div class="hero-body">
+      <div class="ring">
+        <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#16213d" stroke-width="11"/>
+          <circle id="ringArc" cx="60" cy="60" r="52" fill="none" stroke="url(#rg)" stroke-width="11" stroke-linecap="round" stroke-dasharray="0 999"/>
+          <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f7bff"/><stop offset="1" stop-color="#7fb0ff"/></linearGradient></defs></svg>
+        <div class="pct"><b id="pct">–</b><span>implemented</span></div>
+      </div>
+      <div class="hero-nums">
+        <div class="big" id="done">–</div>
+        <div class="of" id="of">functions implemented</div>
+        <div class="chips" id="chips"></div>
+      </div>
+    </div>
+    <div class="pr" id="pr" hidden></div>
+  </section>
+
+  <section class="panel" id="hist" data-name="History" aria-label="History">
+    <h2>History <span class="aside" id="histRange"></span></h2>
+    <div class="legend"><span><i style="background:var(--ok)"></i>% up</span><span><i style="background:var(--bad)"></i>% down (more functions declared)</span><span><i style="background:var(--accent)"></i>Functions gained</span><span style="margin-left:auto;display:flex;gap:4px"><button class="tab rng" data-days="30">30d</button><button class="tab rng" data-days="90">90d</button><button class="tab rng" data-days="0">All</button></span></div>
+    <div class="chart" id="chart"><svg id="chartSvg"></svg><div class="tip" id="tip"></div></div>
+  </section>
+
+  <section class="panel" id="shader" data-name="Shader recompiler" aria-label="Shader recompiler">
+    <h2>Shader recompiler <span class="aside" id="isa"></span></h2>
+    <div class="scroll" id="shaderBody"></div>
+  </section>
+
+  <section class="panel" id="libs" data-name="Libraries" aria-label="Libraries">
+    <h2>Libraries <span class="aside" id="libCount"></span></h2>
+    <div class="libbar" role="tablist">
+      <button class="tab" data-sort="movers" role="tab" title="Libraries that gained or lost functions in the latest feed update">Moved</button>
+      <button class="tab" data-sort="close" role="tab">Almost done</button>
+      <button class="tab" data-sort="left" role="tab">Most left</button>
+      <button class="tab" data-sort="big" role="tab">Biggest</button>
+      <button class="tab" data-sort="done" role="tab">Complete</button>
+      <input type="search" id="q" placeholder="Filter libraries…" aria-label="Filter libraries">
+    </div>
+    <div class="scroll"><div class="liblist" id="libList"></div></div>
+  </section>
+
+  <section class="panel" id="daily" data-name="Daily progress" aria-label="Daily progress">
+    <h2>Daily progress <span class="aside" id="dailyNote"></span></h2>
+    <div class="dsum" id="dailySum"></div>
+    <div class="scroll"><table class="dtable" id="dailyTable"></table></div>
+  </section>
+
+  <section class="panel" id="map" data-name="Every library" aria-label="Library map">
+    <h2>Every library <span class="aside" id="mapNote"></span></h2>
+    <div class="maplegend"><span>0%</span><span class="grad"></span><span>100%</span><span style="margin-left:auto">tile size = function count</span></div>
+    <div class="scroll"><div class="tiles" id="tiles"></div></div>
+  </section>
+</main>
+<div class="foot"><span>PortWatch · data from the <a href="https://boykopovar.github.io/AnyPS5/progress.html" target="_blank" rel="noopener">AnyPS5 progress page</a>. Counts measure source reimplementation, not which games run.</span><span id="srcNote"></span></div>
+<div class="toast" id="toast"></div>
+
+<dialog id="dlg">
+  <h3 style="margin:0 0 6px">Settings</h3>
+  <h4>Stacked tiles</h4>
+  <label>Auto-rotate <input type="checkbox" id="setRotate"></label>
+  <label>Change every <select id="setRotateSec"><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">1 minute</option></select></label>
+  <h4>Data</h4>
+  <label>Refresh every <select id="setRefresh"><option value="10">10 min</option><option value="30">30 min</option><option value="60">1 hour</option><option value="180">3 hours</option></select></label>
+  <label>Library list starts on <select id="setSort"><option value="movers">Moved</option><option value="close">Almost done</option><option value="left">Most left</option><option value="big">Biggest</option></select></label>
+  <label>Feed address <input type="text" id="setSrc" size="28" placeholder="default"></label>
+  <div class="row"><button class="icon-btn" id="setReset" style="margin-right:auto">Clear saved data</button><button class="icon-btn" id="setCancel">Cancel</button><button class="tab" aria-selected="true" id="setClose">Save</button></div>
+  <div class="discard" id="discard" hidden><span>Discard your changes? Changed settings won't be saved.</span><button class="icon-btn" id="keepEdit">Keep editing</button><button class="tab" aria-selected="true" id="discardBtn" style="background:var(--bad);border-color:var(--bad)">Discard</button></div>
+</dialog>
+
+<script>
+"use strict";
+const DEFAULT_SRC = "https://boykopovar.github.io/AnyPS5/";
+const LS = { cfg:"portwatch.cfg", cache:"portwatch.cache", prev:"portwatch.prev" };
+const $ = id => document.getElementById(id);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+const fmt = n => n==null ? "–" : Number(n).toLocaleString("en-AU");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function load(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } }
+function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
+// carry settings and saved data over from the old EmuPulse name
+try{ for(const k of ["cfg","cache","prev"]) if(localStorage.getItem("portwatch."+k)==null && localStorage.getItem("emupulse."+k)!=null){ localStorage.setItem("portwatch."+k, localStorage.getItem("emupulse."+k)); localStorage.removeItem("emupulse."+k); } }catch{}
+
+const params = new URLSearchParams(location.search);
+let cfg = Object.assign({refresh:30, sort:"movers", src:"", histDays:30, rotate:true, rotateSec:20}, load(LS.cfg,{}));
+if (params.get("src")) cfg.src = params.get("src");
+const src = () => { let s = (cfg.src||DEFAULT_SRC).trim(); return s.endsWith("/")?s:s+"/"; };
+
+let model=null, history=[], prevModel=load(LS.prev,null), sortMode=(cfg.sort==="movers"&&!load(LS.prev,null))?"close":cfg.sort, timer=null, lastMod=null;
+let zoomed = null;
+
+/* ---- data ---- */
+function compact(j){
+  const L=j.libraries||{}, S=j.shader_source||null, sh=j.shaders||{};
+  const groups=(L.groups||[]).map(g=>[g.name, g.done|0, g.todo|0, g.shared_sources||""]);
+  const m={ done:L.done|0, total:L.total|0, percent:L.percent, groups, at:Date.now() };
+  if (S){
+    m.shader={ isa:S.isa, instr:S.instructions||{}, dpp:S.dpp||{}, throws:S.unsupported_throws|0,
+      areas:(S.throw_areas||[]).map(a=>[a.name,a.count]), formats:S.formats||null,
+      forms:(S.forms||[]).map(f=>[f.encoding,f.form,f.total|0,f.decoded|0,f.translated|0]) };
+  } else {
+    m.shader={ legacy:true, instr:{total:sh.total|0, decoded:sh.done|0} };
+  }
+  const p=j.open_pr_progress;
+  if (p && p.available) m.pr={ potential:p.potential, prs:p.pull_requests, at:p.generated_at };
+  return m;
+}
+async function fetchAll(){
+  setStatus("busy","Updating…");
+  try{
+    const [pr, hr] = await Promise.all([
+      fetch(src()+"progress.json",{cache:"no-cache"}),
+      fetch(src()+"history.json",{cache:"no-cache"}).catch(()=>null)
+    ]);
+    if(!pr.ok) throw new Error("progress.json returned HTTP "+pr.status);
+    lastMod = pr.headers.get("last-modified");
+    const m = compact(await pr.json());
+    m.lastMod = lastMod;
+    if (hr && hr.ok){ try{ history = await hr.json(); }catch{ history=[]; } }
+    accept(m);
+    save(LS.cache,{m,history});
+    $("banner").style.display="none";
+    setStatus("ok","Updated "+new Date().toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"}));
+  }catch(e){
+    setStatus("err","Offline");
+    const b=$("banner"); b.style.display="block";
+    b.textContent = "Couldn't reach the AnyPS5 feed ("+e.message+"). "+(model?"Showing the last data saved in this browser.":"Will retry automatically.");
+  }
+  schedule();
+}
+function accept(m){
+  const cache=load(LS.cache,null);
+  const old = model || (cache && cache.m);
+  if (old && sig(old)!==sig(m)){
+    // the feed moved on: what we had becomes the comparison point for "Moved"
+    prevModel = old; save(LS.prev, old);
+    const gain = m.done-old.done;
+    if (gain>0) toast(`+${fmt(gain)} functions implemented since the last update`);
+  }
+  model=m; render();
+}
+const sig = m => m.done+"/"+m.total+"/"+m.groups.length;
+function schedule(){ clearTimeout(timer); timer=setTimeout(fetchAll, cfg.refresh*60000); }
+function setStatus(c,t){ $("dot").className="dot "+c; $("statusText").textContent=t; }
+function toast(t){ const el=$("toast"); el.textContent=t; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),6000); }
+function ago(d){ if(!d) return ""; const s=(Date.now()-d)/1000; if(isNaN(s)) return "";
+  if(s<90) return "just now"; if(s<5400) return Math.round(s/60)+" min ago"; if(s<129600) return Math.round(s/3600)+" h ago"; return Math.round(s/86400)+" days ago"; }
+
+/* ---- render ---- */
+function render(){
+  if(!model) return;
+  renderHero(); renderHistory(); renderDaily(); renderShader(); renderLibs(); renderMap();
+}
+function gains(){
+  const h=history.filter(p=>p.libraries);
+  if(h.length<2) return null;
+  const last=h[h.length-1], prev=h[h.length-2];
+  const lastDate=new Date(last.date+"T00:00:00Z");
+  const weekAgo=h.filter(p=>new Date(p.date+"T00:00:00Z")<=new Date(lastDate-7*864e5)).pop()||h[0];
+  const monAgo=h.filter(p=>new Date(p.date+"T00:00:00Z")<=new Date(lastDate-30*864e5)).pop()||h[0];
+  return { day:last.libraries.done-prev.libraries.done, dayDate:last.date,
+           week:last.libraries.done-weekAgo.libraries.done, month:last.libraries.done-monAgo.libraries.done };
+}
+function renderHero(){
+  const m=model, p=m.total?m.done/m.total:0;
+  $("ringArc").setAttribute("stroke-dasharray", `${(2*Math.PI*52*p).toFixed(1)} 999`);
+  $("pct").textContent = (m.percent!=null?+m.percent:100*m.done/(m.total||1)).toFixed(2)+"%";
+  $("done").textContent = fmt(m.done);
+  $("of").textContent = `of ${fmt(m.total)} declared functions · ${fmt(m.total-m.done)} to go`;
+  const g=gains(), libsDone=m.groups.filter(x=>x[1]+x[2]>0 && x[2]===0).length, libsReal=m.groups.filter(x=>x[1]+x[2]>0).length;
+  let chips="";
+  if(g){
+    chips+=`<span class="chip ${g.day>0?"up":""}">Last commit day <b>${g.day>=0?"+":""}${fmt(g.day)}</b></span>`;
+    chips+=`<span class="chip ${g.week>0?"up":""}">7 days <b>+${fmt(g.week)}</b></span>`;
+    chips+=`<span class="chip ${g.month>0?"up":""}">30 days <b>+${fmt(g.month)}</b></span>`;
+  }
+  chips+=`<span class="chip">Libraries complete <b>${libsDone}/${libsReal}</b></span>`;
+  $("chips").innerHTML=chips;
+  const lm = m.lastMod ? Date.parse(m.lastMod) : null;
+  $("feedAge").textContent = lm ? "feed published "+ago(lm) : "";
+  const pr=$("pr");
+  if(m.pr && m.pr.potential){
+    pr.hidden=false;
+    pr.innerHTML=`With open pull requests: <b>${fmt(m.pr.potential.done)}</b> (${m.pr.potential.percent}%) · ${m.pr.prs?m.pr.prs.included+" of "+m.pr.prs.open+" PRs counted":""}`;
+  } else pr.hidden=true;
+}
+
+function histCandles(){
+  // one slot per calendar day; a candle on each day with a data point.
+  // open = previous point's %, close = this day's %. % can fall when new functions get declared.
+  const h=history.filter(p=>p.libraries&&p.libraries.total);
+  const pct=p=>100*p.libraries.done/p.libraries.total;
+  return h.map((p,i)=>({date:p.date, day:Math.round(Date.parse(p.date)/864e5), open:i?pct(h[i-1]):pct(p), close:pct(p),
+    done:p.libraries.done, total:p.libraries.total, gain:i?p.libraries.done-h[i-1].libraries.done:0}));
+}
+function renderHistory(){
+  const svg=$("chartSvg"), box=$("chart").getBoundingClientRect();
+  if(!box.width) return;   // hidden (another panel in its stack is showing); redrawn when shown
+  const W=Math.max(200,box.width), H=Math.max(110,box.height);
+  let c=histCandles();
+  if(c.length<2){ svg.innerHTML=`<text x="0" y="20" fill="#4c5a7d" font-size="13">No history yet</text>`; $("histRange").textContent=""; return; }
+  const range=cfg.histDays||0;
+  if(range){ const cut=c[c.length-1].day-range+1; c=c.filter(k=>k.day>=cut); if(c.length<2) c=histCandles().slice(-2); }
+  const padL=44, padR=8, padT=8, volH=Math.min(46,H*0.2), padB=20+volH+6;
+  const cw=W-padL-padR, ch=H-padT-padB;
+  const d0=c[0].day, d1=c[c.length-1].day, slots=d1-d0+1, sw=cw/slots;
+  const X=d=>padL+(d-d0+0.5)*sw;
+  let lo=Math.min(...c.map(k=>Math.min(k.open,k.close))), hi=Math.max(...c.map(k=>Math.max(k.open,k.close)));
+  const span=Math.max(2,hi-lo); lo=Math.max(0,lo-span*0.08); hi=Math.min(100,hi+span*0.08);
+  const step=niceStep((hi-lo)/4); lo=Math.floor(lo/step)*step; hi=Math.ceil(hi/step)*step;
+  const Y=v=>padT+ch-((v-lo)/(hi-lo))*ch;
+  let out="";
+  for(let v=lo; v<=hi+1e-9; v+=step){ out+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(v)}" y2="${Y(v)}" stroke="#16213d"/><text x="${padL-8}" y="${Y(v)+4}" text-anchor="end" fill="#4c5a7d" font-size="11">${+v.toFixed(step<1?1:0)}%</text>`; }
+  // day labels: pick a spacing that keeps them ~56px apart
+  const every=[1,2,3,7,14,30].find(n=>n*sw>=56)||30;
+  for(let d=d1; d>=d0; d-=every){ const x=X(d); const dt=new Date(d*864e5);
+    out+=`<line x1="${x}" x2="${x}" y1="${padT+ch}" y2="${padT+ch+4}" stroke="#2a3657"/><text x="${x}" y="${padT+ch+16}" text-anchor="middle" fill="#4c5a7d" font-size="11">${dt.toLocaleDateString("en-AU",{day:"numeric",month:"short",timeZone:"UTC"})}</text>`; }
+  const bw=Math.max(1.5,Math.min(16,sw*0.66)), maxG=Math.max(1,...c.map(k=>k.gain));
+  c.forEach(k=>{
+    const up=k.close>=k.open, col=up?"#36d399":"#ff5d6c", x=X(k.day);
+    const yt=Y(Math.max(k.open,k.close)), yb=Y(Math.min(k.open,k.close)), bh=Math.max(1.5,yb-yt);
+    out+=`<line x1="${x}" x2="${x}" y1="${yt-2}" y2="${yt+bh+2}" stroke="${col}" stroke-width="1"/>`;
+    out+=`<rect x="${(x-bw/2).toFixed(1)}" y="${yt.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1" fill="${up?col:col}" ${up?"":'fill-opacity=".9"'}/>`;
+    if(k.gain>0){ const vh=Math.max(1.5,(k.gain/maxG)*volH); out+=`<rect x="${(x-bw/2).toFixed(1)}" y="${(H-vh).toFixed(1)}" width="${bw.toFixed(1)}" height="${vh.toFixed(1)}" rx="1" fill="#2f7bff" opacity=".7"/>`; }
+  });
+  out+=`<line x1="${padL}" x2="${W-padR}" y1="${H}" y2="${H}" stroke="#16213d"/>`;
+  out+=`<rect id="hov" x="0" y="${padT}" width="${sw}" height="${H-padT}" fill="#ffffff10" visibility="hidden"/>`;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.innerHTML=out;
+  const last=c[c.length-1];
+  $("histRange").textContent = `${slots} days · ${(last.close-c[0].open>=0?"+":"")}${(last.close-c[0].open).toFixed(2)} pts`;
+  const tip=$("tip");
+  svg.onmousemove=e=>{
+    const r=svg.getBoundingClientRect(), x=(e.clientX-r.left)*(W/r.width);
+    let best=c[0],bd=1e9; c.forEach(k=>{ const d=Math.abs(X(k.day)-x); if(d<bd){bd=d;best=k;} });
+    const hov=svg.querySelector("#hov"); hov.setAttribute("x",X(best.day)-sw/2); hov.setAttribute("visibility","visible");
+    const ch2=best.close-best.open, col=ch2>=0?"var(--ok)":"var(--bad)";
+    tip.innerHTML=`${fmtDate(best.date)}<br>${best.open.toFixed(2)}% → <b>${best.close.toFixed(2)}%</b> <span style="color:${col}">${ch2>=0?"+":""}${ch2.toFixed(2)} pts</span><br>${fmt(best.done)} / ${fmt(best.total)} functions · <span style="color:var(--accent2)">+${fmt(Math.max(0,best.gain))}</span> that day`;
+    tip.style.display="block";
+    // keep the box inside the chart: slide it sideways at the ends, drop it below the candle near the top
+    const cb=$("chart").getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight;
+    const px=X(best.day)/W*r.width+(r.left-cb.left), top=Y(Math.max(best.open,best.close))/H*r.height+(r.top-cb.top), bot=Y(Math.min(best.open,best.close))/H*r.height+(r.top-cb.top);
+    let ty=top-th-12; if(ty<0) ty=Math.min(cb.height-th-2, bot+12);
+    tip.style.left=Math.round(Math.max(2,Math.min(cb.width-tw-2,px-tw/2)))+"px"; tip.style.top=Math.round(Math.max(0,ty))+"px";
+  };
+  svg.onmouseleave=()=>{ tip.style.display="none"; const hv=svg.querySelector("#hov"); if(hv) hv.setAttribute("visibility","hidden"); };
+}
+function niceStep(x){ const p=Math.pow(10,Math.floor(Math.log10(x||1))); const n=x/p; return (n<1.5?1:n<3?2:n<7?5:10)*p; }
+const short=v=>v>=1000?(v/1000).toFixed(v%1000?1:0)+"k":String(Math.round(v));
+const fmtDate=d=>new Date(d+"T00:00:00Z").toLocaleDateString("en-AU",{day:"numeric",month:"short",timeZone:"UTC"});
+
+function renderDaily(){
+  const c=histCandles();
+  if(c.length<2){ $("dailySum").innerHTML=""; $("dailyTable").innerHTML=`<tr><td class="d">No history yet</td></tr>`; $("dailyNote").textContent=""; return; }
+  const byDay=new Map(c.map(k=>[k.day,k]));
+  const last=c[c.length-1], days=21;
+  const recent=c.filter(k=>k.day>last.day-7), month=c.filter(k=>k.day>last.day-30);
+  const avg7=recent.length?recent.reduce((a,k)=>a+k.gain,0)/7:0;
+  const best=month.reduce((a,k)=>k.gain>a.gain?k:a, month[0]);
+  const active=recent.filter(k=>k.gain>0).length;
+  const dpts=last.close-last.open;
+  const dd=d=>new Date(d*864e5);
+  const lbl=(d,o)=>dd(d).toLocaleDateString("en-AU",Object.assign({timeZone:"UTC"},o));
+  $("dailyNote").textContent=`last ${days} days`;
+  $("dailySum").innerHTML=`<div><div class="dbig ${last.gain>0?"":"zero"}">${last.gain>=0?"+":""}${fmt(last.gain)}</div><div class="dlbl">functions on ${lbl(last.day,{weekday:"short",day:"numeric",month:"short"})}</div></div>
+    <div class="chips">
+      <span class="chip">% <b class="${dpts>=0?"up":"down"}">${dpts>=0?"+":""}${dpts.toFixed(2)} pts</b></span>
+      <span class="chip">7-day avg <b>+${fmt(Math.round(avg7))}/day</b></span>
+      <span class="chip">Active days <b>${active}/7</b></span>
+      <span class="chip">Best (30d) <b class="up">+${fmt(best.gain)}</b> ${lbl(best.day,{day:"numeric",month:"short"})}</span>
+    </div>`;
+  const rows=[]; let maxG=1;
+  for(let d=last.day; d>last.day-days; d--){ const k=byDay.get(d); rows.push([d,k]); if(k) maxG=Math.max(maxG,k.gain); }
+  $("dailyTable").innerHTML=`<tr><th>Day</th><th>Functions</th><th>Implemented</th><th>Δ %</th></tr>`+rows.map(([d,k])=>{
+    const date=`${lbl(d,{weekday:"short"})} <b>${lbl(d,{day:"numeric",month:"short"})}</b>`;
+    if(!k) return `<tr class="idle"><td class="d">${date}</td><td class="g">no commits</td><td></td><td></td></tr>`;
+    const ch=k.close-k.open, w=Math.max(0,k.gain)/maxG*100;
+    return `<tr${k.gain>0?"":' class="idle"'}><td class="d">${date}</td><td class="g"><span class="gb"><i style="width:${w.toFixed(1)}%"></i>${k.gain>0?"+":""}${fmt(k.gain)}</span></td><td>${k.close.toFixed(2)}%</td><td class="${ch>=0?"up":"down"}">${ch>=0?"+":""}${ch.toFixed(2)}</td></tr>`;
+  }).join("");
+}
+function brow(name,count,total,full){
+  const p=total?count/total:0;
+  return `<div class="brow"><span class="n" title="${esc(name)}">${esc(name)}</span><div class="bar"><i class="${p>=1?"full":""}" style="width:${(p*100).toFixed(1)}%"></i></div><span class="c">${full||fmt(count)+"/"+fmt(total)}</span></div>`;
+}
+function renderShader(){
+  const s=model.shader||{}; let h="";
+  $("isa").textContent = s.isa||"";
+  if(s.legacy){
+    h+=`<div class="sub">Opcode names (legacy count)</div><div class="bars">${brow("Declared",s.instr.decoded,s.instr.total)}</div>`;
+  } else {
+    h+=`<div class="bars">`;
+    h+=brow("Forms decoded", s.instr.decoded, s.instr.total);
+    if(s.instr.translated!=null) h+=brow("Translator case", s.instr.translated, s.instr.total);
+    if(s.dpp && s.dpp.total) h+=brow("DPP decoded", s.dpp.decoded, s.dpp.total);
+    h+=`</div>`;
+    if(s.formats){ const f=s.formats; h+=`<div class="sub" style="margin-top:14px">Image formats (of ${f.total})</div><div class="bars">${brow("Sampled",f.sampled,f.total)}${brow("Typed buffer",f.buffer,f.total)}${brow("Vulkan host",f.host,f.total)}</div>`; }
+    if(s.areas && s.areas.length){
+      const mx=Math.max(...s.areas.map(a=>a[1]));
+      h+=`<div class="sub" style="margin-top:14px">Unsupported throw sites · ${fmt(s.throws)}</div><div class="bars">`;
+      s.areas.forEach(([n,c])=>{ h+=`<div class="brow"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar"><i style="width:${(100*c/mx).toFixed(1)}%;background:var(--warn)"></i></div><span class="c">${c}</span></div>`; });
+      h+=`</div>`;
+    }
+    h+=`<p style="color:var(--dim);font-size:11.5px;margin:12px 0 0">A translator case doesn't prove a translation is correct.</p>`;
+  }
+  $("shaderBody").innerHTML=h;
+}
+
+function libRows(){
+  const prev = prevModel ? new Map(prevModel.groups.map(g=>[g[0],g[1]])) : null;
+  let rows = model.groups.filter(g=>g[1]+g[2]>0).map(([name,done,todo])=>({name,label:name.replace(/^libSce/,""),done,todo,total:done+todo,p:done/(done+todo),d:prev&&prev.has(name)?done-prev.get(name):0}));
+  const q=$("q").value.trim().toLowerCase();
+  if(q) rows=rows.filter(r=>r.name.toLowerCase().includes(q));
+  switch(sortMode){
+    case "movers": rows=rows.filter(r=>r.d!==0).sort((a,b)=>b.d-a.d); break;
+    case "close": rows=rows.filter(r=>r.todo>0).sort((a,b)=>b.p-a.p||a.todo-b.todo); break;
+    case "left": rows.sort((a,b)=>b.todo-a.todo); break;
+    case "big": rows.sort((a,b)=>b.total-a.total); break;
+    case "done": rows=rows.filter(r=>r.todo===0).sort((a,b)=>b.total-a.total); break;
+  }
+  return rows;
+}
+function renderLibs(){
+  document.querySelectorAll(".tab[data-sort]").forEach(b=>b.setAttribute("aria-selected", b.dataset.sort===sortMode));
+  const rows=libRows().slice(0,240), list=$("libList");
+  const real=model.groups.filter(g=>g[1]+g[2]>0).length;
+  $("libCount").textContent = `${real} with functions · ${model.groups.length-real} empty`;
+  if(!rows.length){
+    list.innerHTML = `<div class="empty">${sortMode==="movers" ? (prevModel ? "No library counts have changed since the previous update." : "Nothing to compare yet — changes show here after the feed next updates.") : "No matches."}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(r=>`<div class="lib"><span class="nm" title="${esc(r.name)}">${esc(r.label)}${r.d?`<span class="delta">${r.d>0?"+":""}${fmt(r.d)}</span>`:""}</span><span class="ct"><b>${fmt(r.done)}</b> / ${fmt(r.total)} · ${Math.floor(r.p*100)}%</span><div class="bar"><i class="${r.p>=1?"full":""}" style="width:${(r.p*100).toFixed(1)}%"></i></div></div>`).join("");
+}
+function color(p){
+  if(p>=1) return "#36d399";
+  const stops=[[0,[26,36,66]],[.5,[29,79,184]],[1,[64,140,255]]];
+  let a=stops[0],b=stops[1]; if(p>.5){a=stops[1];b=stops[2];}
+  const t=(p-a[0])/(b[0]-a[0]); return `rgb(${a[1].map((c,i)=>Math.round(c+(b[1][i]-c)*t)).join(",")})`;
+}
+function renderMap(){
+  if(!model) return;
+  const libs=model.groups.filter(g=>g[1]+g[2]>0).sort((a,b)=>(b[1]+b[2])-(a[1]+a[2]));
+  $("mapNote").textContent = `${libs.length} libraries`;
+  $("tiles").innerHTML = libs.map(([n,d,t])=>{ const tot=d+t, k=zoomed&&zoomed.contains($("map"))?1.9:1, s=Math.round(k*(10+Math.min(34,Math.sqrt(tot)*1.1))); return `<span class="tile" style="width:${s}px;height:${s}px;background:${color(d/tot)}" title="${esc(n)} — ${fmt(d)}/${fmt(tot)} (${Math.floor(100*d/tot)}%)"></span>`; }).join("");
+}
+
+
+/* ---- tiles: move, resize, stack, auto-rotate ---- */
+const PANELS = ["hero","hist","shader","libs","daily","map"];
+const PEL = Object.fromEntries(PANELS.map(id => [id, $(id)]));
+const PNAME = Object.fromEntries(PANELS.map(id => [id, PEL[id].dataset.name]));
+const LAYOUTS = {
+  std:  { cols:12, rows:8, min:[2,2], tiles:[
+          {p:["hero"],x:0,y:0,w:4,h:4},{p:["hist"],x:4,y:0,w:5,h:4},{p:["shader"],x:9,y:0,w:3,h:4},
+          {p:["libs"],x:0,y:4,w:4,h:4},{p:["daily"],x:4,y:4,w:5,h:4},{p:["map"],x:9,y:4,w:3,h:4}] },
+  wide: { cols:24, rows:4, min:[3,2], tiles:[        // Xeneon Edge and other ultra-wide strips
+          {p:["hero"],x:0,y:0,w:4,h:4},{p:["hist"],x:4,y:0,w:5,h:4},{p:["libs"],x:9,y:0,w:4,h:4},
+          {p:["daily"],x:13,y:0,w:4,h:4},{p:["map"],x:17,y:0,w:3,h:4},{p:["shader"],x:20,y:0,w:4,h:4}] }
+};
+const mainEl = $("main");
+const parking = document.createElement("div"); parking.hidden = true; document.body.appendChild(parking);
+let layout = null, tiles = [], editing = false, drag = null;
+
+const layoutFor = () => innerWidth <= 1100 ? "flow" : (innerWidth / innerHeight >= 21/9 && innerWidth >= 1400 ? "wide" : "std");
+const gridKey = () => layout === "wide" ? "wide" : "std";      // narrow screens list the standard layout's tiles in order
+const area = t => `${t.y+1} / ${t.x+1} / span ${t.h} / span ${t.w}`;
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const cloneTiles = a => a.map(t => ({ p:[...t.p], x:t.x, y:t.y, w:t.w, h:t.h, auto:t.auto !== false, i:0 }));
+const offScreen = () => PANELS.filter(p => !tiles.some(t => t.p.includes(p)));
+function validTiles(a, L){
+  if (!Array.isArray(a)) return false;
+  const seen = new Set();
+  for (const t of a){
+    if (!t || !Array.isArray(t.p) || !t.p.length) return false;
+    for (const p of t.p){ if (!PANELS.includes(p) || seen.has(p)) return false; seen.add(p); }
+    if (!(t.x >= 0 && t.y >= 0 && t.w >= 1 && t.h >= 1 && t.x + t.w <= L.cols && t.y + t.h <= L.rows)) return false;
+  }
+  for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) if (overlaps(a[i], a[j])) return false;
+  return true;
+}
+function loadTiles(){
+  const L = LAYOUTS[gridKey()], saved = load("portwatch.tiles." + gridKey(), null);
+  tiles = cloneTiles(validTiles(saved, L) && saved.length ? saved : L.tiles);
+}
+function saveTiles(){ save("portwatch.tiles." + gridKey(), tiles.map(({p,x,y,w,h,auto}) => Object.assign({p,x,y,w,h}, auto === false ? {auto:false} : {}))); }
+
+function applyLayout(){
+  const want = layoutFor();
+  if (want !== layout){
+    const before = layout && gridKey();
+    layout = want;
+    if (gridKey() !== before) loadTiles();
+    if (layout === "flow" && editing) setEditing(false);
+  }
+  unzoom(true);
+  PANELS.forEach(id => parking.appendChild(PEL[id]));
+  mainEl.replaceChildren();
+  const L = LAYOUTS[gridKey()];
+  mainEl.className = layout === "flow" ? "flow" : "grid";
+  mainEl.style.setProperty("--cols", L.cols); mainEl.style.setProperty("--rows", L.rows);
+  const order = layout === "flow" ? [...tiles].sort((a, b) => a.y - b.y || a.x - b.x) : tiles;
+  for (const t of order){
+    const el = document.createElement("div"); el.className = "dt"; t.el = el;
+    if (layout !== "flow") el.style.gridArea = area(t);
+    t.i = t.i % t.p.length;
+    t.p.forEach((id, k) => { PEL[id].hidden = k !== t.i; el.appendChild(PEL[id]); });
+    el.classList.toggle("stacked", t.p.length > 1);
+    el.addEventListener("pointerdown", () => { t.pauseUntil = Date.now() + 60000; });
+    el.addEventListener("wheel", () => { t.pauseUntil = Date.now() + 60000; }, { passive:true });
+    el.addEventListener("mousemove", () => { t.pauseUntil = Math.max(t.pauseUntil || 0, Date.now() + 15000); });
+    mainEl.appendChild(el);
+  }
+  offScreen().forEach(id => { PEL[id].hidden = false; });
+  renderDots(); renderEdit();
+  requestAnimationFrame(() => { renderHistory(); renderMap(); });
+}
+
+/* dots on a stacked tile: which panel is showing; tap one to switch */
+function renderDots(){
+  for (const t of tiles){
+    if (!t.el) continue;
+    t.el.querySelector(".tdots")?.remove();
+    if (t.p.length < 2 || editing) continue;
+    const d = document.createElement("div"); d.className = "tdots";
+    d.innerHTML = `<span class="tdots-in" role="group" aria-label="Stacked panels">${t.p.map((p, k) =>
+      `<button type="button" class="${k === t.i ? "on" : ""}" data-k="${k}" aria-pressed="${k === t.i}" title="${esc(PNAME[p])}" aria-label="Show ${esc(PNAME[p])}"></button>`).join("")}</span>`;
+    d.addEventListener("click", e => { const b = e.target.closest("button[data-k]"); if (!b) return; e.stopPropagation(); t.pauseUntil = Date.now() + 60000; showPanel(t, +b.dataset.k); });
+    t.el.appendChild(d);
+  }
+}
+function showPanel(t, k){
+  t.i = ((k % t.p.length) + t.p.length) % t.p.length;
+  t.next = Date.now() + cfg.rotateSec * 1000;
+  t.p.forEach((id, j) => { PEL[id].hidden = j !== t.i; });
+  t.el.querySelectorAll(".tdots button").forEach((b, j) => { b.classList.toggle("on", j === t.i); b.setAttribute("aria-pressed", j === t.i); });
+  const id = t.p[t.i];
+  if (id === "hist") renderHistory();
+  if (id === "map") renderMap();
+}
+// auto-rotate: each stack moves on every cfg.rotateSec seconds; touching a tile pauses it for a minute
+setInterval(() => {
+  if (editing || !cfg.rotate) return;
+  const now = Date.now();
+  for (const t of tiles){
+    if (t.p.length < 2 || t.auto === false || !t.el) continue;
+    if ((t.pauseUntil && now < t.pauseUntil) || zoomed === t.el && t.el.matches(":hover")) { t.next = now + cfg.rotateSec * 1000; continue; }
+    if (!t.next) t.next = now + cfg.rotateSec * 1000;
+    if (now >= t.next) showPanel(t, t.i + 1);
+  }
+}, 500);
+
+/* ---- edit mode ---- */
+function setEditing(on){
+  if (on && layout === "flow"){ toast("Make the window wider to edit the layout"); return; }
+  unzoom(); editing = on;
+  document.body.classList.toggle("editing", on); $("editBtn").classList.toggle("on", on);
+  renderDots(); renderEdit();
+  requestAnimationFrame(() => { renderHistory(); renderMap(); });
+}
+function renderEdit(){
+  $$(".tedit,.ghost", mainEl).forEach(e => e.remove());
+  const off = offScreen();
+  $("offList").innerHTML = off.length ? `<b>Not on screen</b>${off.map(p => `<button type="button" class="chipbtn" data-add="${p}">+ ${esc(PNAME[p])}</button>`).join("")}` : "";
+  if (!editing) return;
+  tiles.forEach((t, ti) => {
+    const e = document.createElement("div"); e.className = "tedit"; e.dataset.t = ti;
+    const stacked = t.p.length > 1, on = t.auto !== false;
+    e.innerHTML = `<div class="bar1"><span class="grip" aria-hidden="true">⠿</span><span class="names">${t.p.map(p => esc(PNAME[p])).join(" + ")}</span>
+      ${stacked ? `<button type="button" class="tb ${on ? "on" : ""}" data-act="rotate" aria-pressed="${on}" title="Auto-rotate this stack">Rotate: ${on ? "On" : "Off"}</button>
+      <button type="button" class="tb" data-act="unstack" title="Split these panels into their own tiles">Unstack</button>` : ""}
+      <button type="button" class="tb" data-act="remove" title="Put ${stacked ? "the showing panel" : "this tile"} under Not on screen">Remove${stacked ? " " + esc(PNAME[t.p[t.i]]) : ""}</button></div>
+      <span class="size">${t.w} × ${t.h}</span><span class="rz" title="Drag to resize"></span>`;
+    t.el.appendChild(e);
+  });
+}
+function cellAt(x, y){
+  const r = mainEl.getBoundingClientRect(), cs = getComputedStyle(mainEl), L = LAYOUTS[gridKey()];
+  const pl = parseFloat(cs.paddingLeft), pr = parseFloat(cs.paddingRight), pt = parseFloat(cs.paddingTop), pb = parseFloat(cs.paddingBottom);
+  const cx = Math.floor((x - r.left - pl) / ((r.width - pl - pr) / L.cols)), cy = Math.floor((y - r.top - pt) / ((r.height - pt - pb) / L.rows));
+  return { x: Math.max(0, Math.min(L.cols - 1, cx)), y: Math.max(0, Math.min(L.rows - 1, cy)) };
+}
+function clearMarks(){ $$(".ghost", mainEl).forEach(g => g.remove()); $$(".tedit.stack,.tedit.swap", mainEl).forEach(e => e.classList.remove("stack", "swap")); }
+function ghost(c, ok){ const g = document.createElement("div"); g.className = "ghost" + (ok ? "" : " bad"); g.style.gridArea = area(c); mainEl.appendChild(g); }
+function freeSpot(p){
+  const L = LAYOUTS[gridKey()], def = L.tiles.find(t => t.p.includes(p)) || { w:4, h:4 };
+  const sizes = [[def.w, def.h], [4,4], [3,4], [4,3], [3,3], [4,2], [3,2], [2,2]].filter(([w, h]) => w >= L.min[0] && h >= L.min[1] && w <= L.cols && h <= L.rows);
+  for (const [w, h] of sizes) for (let y = 0; y + h <= L.rows; y++) for (let x = 0; x + w <= L.cols; x++){
+    const c = { x, y, w, h }; if (!tiles.some(o => overlaps(o, c))) return c;
+  }
+  return null;
+}
+function addPanel(p){
+  const c = freeSpot(p);
+  if (c) tiles.push(Object.assign({ p:[p], auto:true, i:0 }, c));
+  else {
+    const big = tiles.reduce((a, t) => (!a || t.w * t.h > a.w * a.h ? t : a), null);
+    if (!big) tiles.push({ p:[p], x:0, y:0, w:4, h:4, auto:true, i:0 });
+    else { big.p.push(p); big.i = big.p.length - 1; toast(`No free space, so ${PNAME[p]} is stacked with ${PNAME[big.p[0]]}`); }
+  }
+  saveTiles(); applyLayout();
+}
+function unstack(t){
+  const extra = t.p.filter((_, k) => k !== t.i);
+  t.p = [t.p[t.i]]; t.i = 0;
+  const left = [];
+  for (const p of extra){ const c = freeSpot(p); if (c) tiles.push(Object.assign({ p:[p], auto:true, i:0 }, c)); else left.push(p); }
+  saveTiles(); applyLayout();
+  toast(left.length ? `No room for ${left.map(p => PNAME[p]).join(", ")}: find it under Not on screen` : "Unstacked");
+}
+function removeShown(t){
+  const p = t.p[t.i];
+  if (t.p.length > 1){ t.p.splice(t.i, 1); t.i = t.i % t.p.length; }
+  else tiles.splice(tiles.indexOf(t), 1);
+  saveTiles(); applyLayout();
+  toast(`${PNAME[p]} is under Not on screen`);
+}
+
+mainEl.addEventListener("pointerdown", e => {
+  if (!editing || e.button > 0) return;
+  const te = e.target.closest(".tedit");
+  if (!te || e.target.closest("button")) return;
+  const t = tiles[+te.dataset.t], c = cellAt(e.clientX, e.clientY);
+  drag = { t, mode: e.target.closest(".rz") ? "resize" : "move", sx:e.clientX, sy:e.clientY, dx:c.x - t.x, dy:c.y - t.y, moved:false };
+  e.preventDefault();
+});
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  const d = drag, t = d.t, L = LAYOUTS[gridKey()];
+  if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
+  d.moved = true; clearMarks(); d.stack = d.swap = d.cand = null;
+  if (d.mode === "move"){
+    t.el.classList.add("dragging");
+    t.el.style.transform = `translate(${e.clientX - d.sx}px,${e.clientY - d.sy}px)`;
+    const under = tiles.find(o => { if (o === t) return false; const r = o.el.getBoundingClientRect(); return e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom; });
+    if (under){
+      const r = under.el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height, te = under.el.querySelector(".tedit");
+      if (fx > .2 && fx < .8 && fy > .2 && fy < .8){ d.stack = under; te.classList.add("stack"); }
+      else { d.swap = under; te.classList.add("swap"); }
+      return;
+    }
+    const c = cellAt(e.clientX, e.clientY);
+    d.cand = { x: Math.max(0, Math.min(L.cols - t.w, c.x - d.dx)), y: Math.max(0, Math.min(L.rows - t.h, c.y - d.dy)), w:t.w, h:t.h };
+  } else {
+    const c = cellAt(e.clientX, e.clientY);
+    d.cand = { x:t.x, y:t.y, w: Math.max(L.min[0], Math.min(L.cols - t.x, c.x - t.x + 1)), h: Math.max(L.min[1], Math.min(L.rows - t.y, c.y - t.y + 1)) };
+    const sz = t.el.querySelector(".tedit .size"); if (sz) sz.textContent = `${d.cand.w} × ${d.cand.h}`;
+  }
+  d.ok = !tiles.some(o => o !== t && overlaps(o, d.cand));
+  ghost(d.cand, d.ok);
+});
+addEventListener("pointerup", () => {
+  if (!drag) return;
+  const d = drag, t = d.t; drag = null;
+  t.el.classList.remove("dragging"); t.el.style.transform = ""; clearMarks();
+  if (!d.moved) return;
+  if (d.mode === "move" && d.stack){
+    d.stack.p = d.stack.p.concat(t.p); d.stack.i = d.stack.p.length - t.p.length;
+    tiles.splice(tiles.indexOf(t), 1);
+    toast(`Stacked: ${d.stack.p.map(p => PNAME[p]).join(", ")}`);
+  } else if (d.mode === "move" && d.swap){
+    const o = d.swap; for (const k of ["x","y","w","h"]) [t[k], o[k]] = [o[k], t[k]];
+  } else if (d.cand && d.ok){ Object.assign(t, d.cand); }
+  else if (d.cand) toast(d.mode === "move" ? "No room there" : "That would overlap another tile");
+  saveTiles(); applyLayout();
+});
+document.addEventListener("click", e => {
+  const add = e.target.closest("[data-add]"); if (add){ addPanel(add.dataset.add); return; }
+  const b = e.target.closest(".tedit [data-act]"); if (!b) return;
+  const t = tiles[+b.closest(".tedit").dataset.t];
+  if (b.dataset.act === "rotate"){ t.auto = t.auto === false; saveTiles(); renderEdit(); }
+  else if (b.dataset.act === "unstack") unstack(t);
+  else if (b.dataset.act === "remove") removeShown(t);
+});
+$("editBtn").onclick = () => setEditing(!editing);
+$("doneBtn").onclick = () => setEditing(false);
+$("resetLayout").onclick = () => { tiles = cloneTiles(LAYOUTS[gridKey()].tiles); saveTiles(); applyLayout(); toast("Layout reset"); };
+
+/* ---- expand one tile over the dashboard ---- */
+const ZOOM_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 2h4v4M6 14H2v-4M14 2 9.5 6.5M2 14l4.5-4.5"/></svg>';
+const UNZOOM_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>';
+function zoomButtons(){
+  PANELS.forEach(id => { const b = PEL[id].querySelector(".zbtn"), z = !!(zoomed && zoomed.contains(PEL[id]));
+    b.innerHTML = z ? UNZOOM_ICON : ZOOM_ICON; b.title = z ? "Back to dashboard (Esc)" : "Expand"; });
+}
+function zoom(el){
+  if (!el || editing) return;
+  document.documentElement.style.setProperty("--hdr", Math.round(document.querySelector("header").getBoundingClientRect().bottom) + "px");
+  if (zoomed === el) return unzoom();
+  unzoom(true);
+  zoomed = el; el.classList.add("zoomed"); document.body.classList.add("has-zoom");
+  zoomButtons(); requestAnimationFrame(() => { renderHistory(); renderMap(); });
+}
+function unzoom(quiet){
+  if (!zoomed) return;
+  zoomed.classList.remove("zoomed"); document.body.classList.remove("has-zoom"); zoomed = null;
+  zoomButtons(); if (!quiet) requestAnimationFrame(() => { renderHistory(); renderMap(); });
+}
+PANELS.forEach(id => {
+  const panel = PEL[id], h2 = panel.querySelector("h2");
+  const btn = document.createElement("button");
+  btn.className = "zbtn"; btn.type = "button"; btn.setAttribute("aria-label", "Expand " + PNAME[id]);
+  btn.onclick = e => { e.stopPropagation(); zoom(panel.closest(".dt")); };
+  h2.appendChild(btn);
+  h2.addEventListener("click", () => zoom(panel.closest(".dt")));
+  panel.addEventListener("dblclick", e => { if (!e.target.closest("button,input,select,a")) { getSelection().removeAllRanges(); zoom(panel.closest(".dt")); } });
+});
+zoomButtons();
+document.addEventListener("click", e => { if (zoomed && !zoomed.contains(e.target) && !e.target.closest("dialog,header,.editbar")) unzoom(); });
+
+/* ---- credits menu ---- */
+function credits(open){ $("creditsPop").classList.toggle("open", open); $("creditsBtn").setAttribute("aria-expanded", open); }
+$("creditsBtn").onclick = e => { e.stopPropagation(); credits(!$("creditsPop").classList.contains("open")); };
+document.addEventListener("click", e => { if (!e.target.closest(".menu")) credits(false); });
+
+/* ---- ui ---- */
+document.querySelectorAll(".tab[data-sort]").forEach(b => b.onclick = () => { sortMode = b.dataset.sort; renderLibs(); });
+$("q").oninput = renderLibs;
+function markRange(){ document.querySelectorAll(".rng").forEach(b => b.setAttribute("aria-selected", +b.dataset.days === (cfg.histDays || 0))); }
+document.querySelectorAll(".rng").forEach(b => b.onclick = () => { cfg.histDays = +b.dataset.days; save(LS.cfg, cfg); markRange(); renderHistory(); });
+markRange();
+$("refreshBtn").onclick = fetchAll;
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape"){
+    if ($("creditsPop").classList.contains("open")) return credits(false);
+    if ($("dlg").open) return;
+    if (zoomed) return unzoom();
+    if (editing) return setEditing(false);
+  }
+  if (e.key === "r" && !e.target.closest("input,select,textarea") && !e.ctrlKey && !e.metaKey) fetchAll();
+});
+const formState = () => JSON.stringify([$("setRefresh").value, $("setSort").value, $("setSrc").value.trim(), $("setRotate").checked, $("setRotateSec").value]);
+let formStart = "";
+$("setBtn").onclick = () => {
+  $("setRefresh").value = cfg.refresh; $("setSort").value = cfg.sort; $("setSrc").value = cfg.src;
+  $("setRotate").checked = cfg.rotate; $("setRotateSec").value = cfg.rotateSec;
+  $("discard").hidden = true; formStart = formState(); $("dlg").showModal();
+};
+function cancelSettings(){
+  if (formState() !== formStart && $("discard").hidden){ $("discard").hidden = false; $("keepEdit").focus(); return; }
+  $("discard").hidden = true; $("dlg").close();
+}
+$("setCancel").onclick = cancelSettings;
+$("keepEdit").onclick = () => { $("discard").hidden = true; };
+$("discardBtn").onclick = () => { $("discard").hidden = true; $("dlg").close(); };
+$("dlg").addEventListener("cancel", e => { e.preventDefault(); cancelSettings(); });   // Esc goes through the same check
+$("setClose").onclick = () => {
+  const newSrc = $("setSrc").value.trim(), srcChanged = newSrc !== cfg.src;
+  cfg = Object.assign(cfg, { refresh:+$("setRefresh").value, sort:$("setSort").value, src:newSrc, rotate:$("setRotate").checked, rotateSec:+$("setRotateSec").value });
+  save(LS.cfg, cfg); $("dlg").close(); sortMode = cfg.sort;
+  tiles.forEach(t => { t.next = 0; });
+  render();
+  if (srcChanged) fetchAll(); else schedule();
+};
+$("setReset").onclick = () => { try{ Object.keys(localStorage).filter(k => k.startsWith("portwatch.")).forEach(k => localStorage.removeItem(k)); }catch{} prevModel = null; loadTiles(); applyLayout(); render(); toast("Saved data and layout cleared"); };
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (layoutFor() !== layout) applyLayout(); else { renderHistory(); renderMap(); } }, 120); });
+new ResizeObserver(() => requestAnimationFrame(renderHistory)).observe($("chart"));
+setInterval(() => { if (model) renderHero(); }, 60000);
+if (cfg.src) $("srcNote").textContent = "Feed: " + src();
+
+applyLayout();
+const cached = load(LS.cache, null);
+if (cached && cached.m){ model = cached.m; history = cached.history || []; render(); setStatus("busy", "Showing saved data…"); }
+fetchAll();
+</script>
+</body>
+</html>

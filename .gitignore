@@ -1,0 +1,5 @@
+build/
+firmware/out/
+firmware/.pio/
+.DS_Store
+__pycache__/

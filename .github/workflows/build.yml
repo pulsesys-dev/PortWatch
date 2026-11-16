@@ -1,0 +1,102 @@
+# Builds both PortWatch firmwares on GitHub's servers, so nobody needs the ESP32 toolchain.
+#
+#   Every push to main  -> builds, keeps the files as a downloadable artifact, and publishes the
+#                          flasher (firmware inside) to GitHub Pages:  https://pulsesys-dev.github.io/PortWatch/
+#                          plus the web dashboard at                  https://pulsesys-dev.github.io/PortWatch/web/
+#   A version tag       -> also makes a GitHub release with all the files.
+#                          Beta:     git tag b1.0 && git push origin b1.0   (pre-release)
+#                          Official: git tag v1.0 && git push origin v1.0
+#                          The tag must match EP_VERSION in firmware/PortWatch/config.h.
+#   Actions tab         -> "Run workflow" builds on demand.
+#
+# One-time setup: repo Settings > Pages > Build and deployment > Source: "GitHub Actions".
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*", "b*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check a version tag matches EP_VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          v=$(sed -n 's/^#define EP_VERSION *"\([^"]*\)".*/\1/p' firmware/PortWatch/config.h)
+          if [ "$v" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match EP_VERSION \"$v\" in firmware/PortWatch/config.h"; exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install esptool==4.8.1
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache the ESP32 core
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-esp32-3.1.1-gfx-1.5.0-ajson-7.2.1-xpt-1.4
+
+      - name: Install the ESP32 core and libraries (pinned versions)
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.1.1
+          arduino-cli lib install "GFX Library for Arduino@1.5.0" "ArduinoJson@7.2.1" "XPT2046_Touchscreen@1.4"
+
+      - name: Build both boards
+        run: bash firmware/tools/build_release.sh
+
+      - name: Keep the files (Actions run > Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PortWatch-firmware
+          path: build/release/*
+
+      - name: Package the Pages site
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/site
+
+      - name: Publish a release for version tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/release/*
+          generate_release_notes: true
+          prerelease: ${{ startsWith(github.ref_name, 'b') }}
+          name: ${{ startsWith(github.ref_name, 'b') && format('PortWatch {0} (beta)', github.ref_name) || format('PortWatch {0}', github.ref_name) }}
+
+  pages:              # only main updates the site (Pages won't deploy from tags by default)
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

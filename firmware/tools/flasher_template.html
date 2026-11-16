@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PortWatch flasher</title>
+<style>
+:root{--bg:#05070d;--panel:#0b1120;--line:#1b2745;--fg:#e8eefc;--muted:#8190b4;--dim:#4c5a7d;--accent:#2f7bff;--accent2:#7fb0ff;--ok:#36d399;--bad:#ff5d6c;--warn:#f5b83d;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg)}
+.wrap{max-width:720px;margin:auto;padding:24px 18px 60px}
+h1{margin:0;font-size:26px}h1 span{color:var(--accent2);font-weight:500}
+.sub{color:var(--muted);margin:4px 0 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
+.card h2{margin:0 0 4px;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;gap:10px;align-items:center}
+.card h2 b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#16213d;color:var(--accent2);font-size:12px;letter-spacing:0}
+.boards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.board{border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;background:#0a1328;text-align:left;color:inherit;font:inherit}
+.board strong{display:block}.board small{color:var(--muted)}
+.board[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px #2f7bff55}
+.board .tag{float:right;font-size:11px;color:var(--ok)}
+button.main{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:11px 22px;font:inherit;font-weight:600;cursor:pointer}
+button.main:disabled{opacity:.4;cursor:default}
+button.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:9px 16px;font:inherit;cursor:pointer}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.drop{border:1.5px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--muted);margin-top:12px;cursor:pointer}
+.drop.ok{border-color:var(--ok);color:var(--fg)} .drop.bad{border-color:var(--bad)}
+label.chk{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px}
+.prog{height:10px;background:#16213d;border-radius:99px;overflow:hidden;margin-top:14px}.prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.status{margin-top:10px;font-size:14px;color:var(--muted)} .status.ok{color:var(--ok)} .status.err{color:var(--bad)}
+input,select{background:#0a1328;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+.grid2{display:grid;grid-template-columns:auto 1fr;gap:10px 12px;align-items:center;margin-top:12px}
+details{margin-top:14px}summary{cursor:pointer;color:var(--dim);font-size:13px}
+pre{background:#03050a;border:1px solid var(--line);border-radius:10px;padding:10px;max-height:240px;overflow:auto;font-size:12px;color:#9fb0d6;white-space:pre-wrap}
+.warn{background:#2a1f0a;border:1px solid #5a4316;color:#ffd99a;border-radius:10px;padding:10px 12px;font-size:14px;display:none}
+.note{color:var(--dim);font-size:12.5px}a{color:var(--accent2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PortWatch <span>· flasher</span></h1>
+  <div class="sub">AnyPS5 progress desk display — firmware <span id="fwVer">b1.0</span>. Use Chrome or Edge on Mac or Windows.</div>
+  <div class="warn" id="noSerial">This browser can't talk to USB serial devices. Open this file in Chrome or Edge on a computer.</div>
+
+  <div class="card">
+    <h2><b>1</b> Pick your board</h2>
+    <div class="boards">
+      <button class="board" data-board="cyd" aria-pressed="false"><span class="tag" id="tag-cyd"></span><strong>Cheap Yellow Display</strong><small>ESP32-2432S028R · 2.8" 320×240</small></button>
+      <button class="board" data-board="guition" aria-pressed="false"><span class="tag" id="tag-guition"></span><strong>Guition JC4827W543</strong><small>4.3" 480×272 · C or R (auto-detected)</small></button>
+    </div>
+    <div class="drop" id="drop">Drop <b id="wantName">PortWatch-*.bin</b> here or click to choose it<input type="file" id="file" accept=".bin" hidden></div>
+    <div class="status" id="fileStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2><b>2</b> Flash</h2>
+    <p class="note" style="margin:6px 0 0">Plug the board in with a data USB cable. If it won't connect, hold <b>BOOT</b>, tap <b>RESET</b>, release <b>BOOT</b>, then try again. On a Mac with a CH340 board, close any serial monitor first.</p>
+    <label class="chk" style="margin-top:12px"><input type="checkbox" id="erase"> Erase everything first (clears saved Wi-Fi, settings and touch calibration)</label>
+    <div class="row"><button class="main" id="connBtn" disabled>Connect</button><button class="main" id="flashBtn" disabled>Flash</button><button class="ghost" id="discBtn" disabled>Disconnect</button><span class="note" id="chipNote"></span></div>
+    <div class="prog"><i id="bar"></i></div>
+    <div class="status" id="flashStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2><b>3</b> Wi-Fi &amp; display</h2>
+    <p class="note" style="margin:6px 0 0">Sends your Wi-Fi details and display settings to the board over USB. You can skip Wi-Fi here and use the on-screen setup network (PortWatch-XXXX) from your phone instead.</p>
+    <div class="row"><button class="ghost" id="wifiConnect">Connect to display</button><span class="note" id="devInfo"></span></div>
+    <div class="grid2">
+      <span>Network</span><span style="display:flex;gap:8px"><select id="ssidSel" style="flex:1"><option value="">— scan, or type below —</option></select><button class="ghost" id="scanBtn" disabled>Scan</button></span>
+      <span></span><input id="ssid" placeholder="Network name (SSID)">
+      <span>Password</span><input id="pass" type="password" placeholder="Wi-Fi password">
+    </div>
+    <div class="row"><button class="main" id="wifiBtn" disabled>Send Wi-Fi to display</button></div>
+    <div class="status" id="wifiStatus"></div>
+    <div class="grid2" style="margin-top:18px">
+      <span>Orientation</span><span style="display:flex;gap:8px"><select id="rotSel" style="flex:1" disabled>
+        <option value="0">Landscape</option><option value="1">Landscape, flipped</option><option value="2">Portrait</option><option value="3">Portrait, flipped</option></select>
+        <button class="ghost" id="rotBtn" disabled>Apply</button></span>
+      <span>Touch</span><span style="display:flex;gap:8px;align-items:center"><button class="ghost" id="calBtn" disabled>Calibrate touch</button><span class="note" id="touchNote">Resistive screens (CYD, Guition R) need calibrating.</span></span>
+    </div>
+    <div class="status" id="dispStatus"></div>
+  </div>
+
+  <details><summary>Serial log</summary><pre id="log"></pre></details>
+  <p class="note">PortWatch shows data from the AnyPS5 project's public progress page. Pulse Systems.</p>
+</div>
+
+<!--FIRMWARE-->
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const logEl = $("log");
+const log = s => { logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; };
+const BOARDS = { cyd:{ chip:"ESP32", chipId:0x0000, imgOffset:0x1000, file:"PortWatch-cyd.bin" },
+                 guition:{ chip:"ESP32-S3", chipId:0x0009, imgOffset:0x0, file:"PortWatch-guition.bin" } };
+let board = null, image = null;   // image: Uint8Array of the merged firmware
+
+if (!("serial" in navigator)) { $("noSerial").style.display = "block"; }
+
+/* ---------- firmware embedded by tools/build_flasher.py ---------- */
+function embedded(name){
+  const el = document.getElementById("fw-" + name);
+  if (!el) return null;
+  const b64 = el.textContent.trim(); if (!b64) return null;
+  const bin = atob(b64), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+const meta = document.getElementById("fw-meta");
+if (meta) { try { const m = JSON.parse(meta.textContent); if (m.version) $("fwVer").textContent = m.version; } catch {} }
+for (const b of Object.keys(BOARDS)) if (document.getElementById("fw-" + b)) $("tag-" + b).textContent = "firmware included";
+
+/* ---------- image checks ---------- */
+// Merged images start with the bootloader: ESP32 at 0x1000, ESP32-S3 at 0x0.
+// Byte 0 = 0xE9 magic, bytes 12-13 = chip id (ESP32 0, ESP32-S3 9).
+function checkImage(img, b){
+  const cfg = BOARDS[b];
+  if (img.length < 0x10000) return "That file is too small to be a full firmware image.";
+  const off = cfg.imgOffset;
+  if (img[off] !== 0xE9) {
+    if (img[0] === 0xE9 && cfg.imgOffset === 0x1000) return "This looks like an ESP32-S3 image or an app-only file. Pick the merged PortWatch-cyd.bin.";
+    if (img[0x1000] === 0xE9 && cfg.imgOffset === 0) return "This looks like a CYD (ESP32) image. Pick PortWatch-guition.bin.";
+    return "This isn't a merged firmware image (use PortWatch-*.bin, not the .ota.bin).";
+  }
+  const id = img[off+12] | (img[off+13] << 8);
+  if (id !== cfg.chipId) return `This is for a different chip, or it is the app-only .ota.bin. Pick ${cfg.file}.`;
+  return null;
+}
+window.__portwatch = { checkImage, BOARDS };   // for tests
+
+function setBoard(b){
+  board = b;
+  document.querySelectorAll(".board").forEach(x => x.setAttribute("aria-pressed", x.dataset.board === b));
+  $("wantName").textContent = BOARDS[b].file;
+  const emb = embedded(b);
+  if (emb) useImage(emb, "included firmware");
+  else { image = null; $("drop").className = "drop"; $("fileStatus").textContent = "Choose the firmware file you built for this board."; $("fileStatus").className = "status"; }
+  updateButtons();
+}
+function useImage(img, label){
+  const err = checkImage(img, board);
+  if (err) { image = null; $("drop").className = "drop bad"; $("fileStatus").textContent = err; $("fileStatus").className = "status err"; }
+  else { image = img; $("drop").className = "drop ok"; $("fileStatus").textContent = `Ready: ${label} (${(img.length/1024).toFixed(0)} KB, ${BOARDS[board].chip}).`; $("fileStatus").className = "status ok"; }
+  updateButtons();
+}
+function updateButtons(){ if (typeof setFlashButtons === "function") setFlashButtons(); }
+document.querySelectorAll(".board").forEach(x => x.onclick = () => setBoard(x.dataset.board));
+$("drop").onclick = () => $("file").click();
+$("file").onchange = async e => { const f = e.target.files[0]; if (f && board) useImage(new Uint8Array(await f.arrayBuffer()), f.name); else if (f) { $("fileStatus").textContent = "Pick your board first."; } };
+$("drop").ondragover = e => { e.preventDefault(); };
+$("drop").ondrop = async e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return; if (!board) { $("fileStatus").textContent = "Pick your board first."; return; } useImage(new Uint8Array(await f.arrayBuffer()), f.name); };
+
+/* ---------- flashing (esptool-js) ---------- */
+let esptool = null;
+async function loadEsptool(){
+  if (!esptool) {
+    const el = document.getElementById("esptool-src");     // baked in by build_flasher.py
+    if (el) {
+      const url = URL.createObjectURL(new Blob([atob(el.textContent.trim())], { type: "text/javascript" }));
+      esptool = await import(url);
+    } else esptool = await import("https://unpkg.com/esptool-js@0.5.7/bundle.js");
+  }
+  return esptool;
+}
+function toBinaryString(u8){ let s = ""; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return s; }
+
+let esp = null;        // { transport, loader, chip, port } while connected for flashing
+let lastPort = null;   // reused by step 3 so you aren't asked to pick the port again
+function setFlashButtons(){
+  const ok = "serial" in navigator;
+  $("connBtn").disabled = !ok || !!esp;
+  $("flashBtn").disabled = !(esp && board && image);
+  $("discBtn").disabled = !esp;
+}
+function chipMatches(chip){
+  const want = BOARDS[board].chip, c = chip.toUpperCase();
+  return want === "ESP32" ? c.startsWith("ESP32") && !/S2|S3|C2|C3|C5|C6|H2|P4/.test(c) : c.startsWith(want);
+}
+$("connBtn").onclick = async () => {
+  const st = $("flashStatus");
+  try {
+    await closeSerial();
+    st.className = "status"; st.textContent = "Loading flasher…";
+    const { ESPLoader, Transport } = await loadEsptool();
+    const port = await navigator.serial.requestPort();
+    const transport = new Transport(port, true);
+    const term = { clean(){}, writeLine: s => log(s), write: s => logEl.textContent += s };
+    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200, terminal: term });
+    st.textContent = "Connecting…";
+    const chip = await loader.main();
+    esp = { transport, loader, chip, port }; lastPort = port;
+    $("chipNote").textContent = "Connected: " + chip;
+    if (board && !chipMatches(chip)) { st.className = "status err"; st.textContent = `This board is an ${chip}, but you picked ${BOARDS[board].chip}. Pick the other board above.`; }
+    else { st.className = "status ok"; st.textContent = board && image ? "Connected. Ready to flash." : "Connected. Pick your board and firmware above."; }
+  } catch (e) {
+    console.error(e); log(String(e && e.stack || e));
+    st.className = "status err"; st.textContent = (e && e.message) || String(e);
+    if (esp) try { await esp.transport.disconnect(); } catch {}
+    esp = null;
+  }
+  setFlashButtons();
+};
+$("discBtn").onclick = async () => {
+  if (esp) { try { await esp.transport.disconnect(); } catch {} esp = null; }
+  $("chipNote").textContent = ""; $("flashStatus").className = "status"; $("flashStatus").textContent = "Disconnected.";
+  setFlashButtons();
+};
+$("flashBtn").onclick = async () => {
+  const st = $("flashStatus"), bar = $("bar");
+  if (!esp) return;
+  if (!chipMatches(esp.chip)) { st.className = "status err"; st.textContent = `This board is an ${esp.chip}, but you picked ${BOARDS[board].chip}.`; return; }
+  $("flashBtn").disabled = $("discBtn").disabled = true;
+  try {
+    const { loader, transport } = esp;
+    if ($("erase").checked) { st.className = "status"; st.textContent = "Erasing flash…"; await loader.eraseFlash(); }
+    st.className = "status"; st.textContent = "Writing firmware…";
+    await loader.writeFlash({ fileArray:[{ data: toBinaryString(image), address: 0 }], flashSize:"keep", flashMode:"keep", flashFreq:"keep",
+      eraseAll:false, compress:true, reportProgress:(i, written, total) => { bar.style.width = (100 * written / total).toFixed(1) + "%"; } });
+    await loader.after("hard_reset");
+    await transport.disconnect();
+    bar.style.width = "100%";
+    st.className = "status ok"; st.textContent = "Done. The display is restarting. Set up Wi-Fi and the display below.";
+  } catch (e) {
+    console.error(e); log(String(e && e.stack || e));
+    st.className = "status err"; st.textContent = (e && e.message) || String(e);
+    try { await esp.transport.disconnect(); } catch {}
+  }
+  esp = null; $("chipNote").textContent = "";
+  setFlashButtons();
+};
+
+/* ---------- Improv Wi-Fi over serial ---------- */
+const IMPROV = [73,77,80,82,79,86];  // "IMPROV"
+function improvPacket(type, data){
+  const p = [...IMPROV, 1, type, data.length, ...data];
+  p.push(p.reduce((a,b) => (a + b) & 0xFF, 0));
+  return new Uint8Array([...p, 10]);
+}
+function rpc(cmd, strings){
+  const enc = new TextEncoder(), body = [];
+  for (const s of strings) { const b = [...enc.encode(s)]; body.push(b.length, ...b); }
+  return improvPacket(3, [cmd, body.length, ...body]);
+}
+// Pulls complete Improv packets out of a byte buffer; returns {packets, rest}
+function improvParse(buf){
+  const packets = []; let i = 0;
+  outer: while (i <= buf.length - 9) {
+    for (let k = 0; k < 6; k++) if (buf[i+k] !== IMPROV[k]) { i++; continue outer; }
+    const len = buf[i+8], end = i + 9 + len;
+    if (end >= buf.length) break;                    // need the checksum byte too
+    let sum = 0; for (let k = i; k < end; k++) sum = (sum + buf[k]) & 0xFF;
+    if (sum === buf[end]) packets.push({ type: buf[i+7], data: buf.slice(i+9, end) });
+    i = end + 1;
+  }
+  return { packets, rest: buf.slice(Math.min(i, buf.length)) };
+}
+function rpcStrings(data){   // [cmd, len, (len,str)*]
+  const out = [], dec = new TextDecoder(); let p = 2;
+  while (p < 2 + data[1] && p < data.length) { const l = data[p]; out.push(dec.decode(data.slice(p+1, p+1+l))); p += 1 + l; }
+  return { cmd: data[0], strings: out };
+}
+window.__portwatch.improv = { improvPacket, rpc, improvParse, rpcStrings };
+
+let sp = null, reader = null, rxBuf = new Uint8Array(0), waiters = [], lineWaiters = [], textTail = "";
+function waitLine(pred, ms){
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => { lineWaiters = lineWaiters.filter(x => x !== fn); rej(new Error("timeout")); }, ms);
+    const fn = l => { const r = pred(l); if (r !== undefined) { clearTimeout(t); lineWaiters = lineWaiters.filter(x => x !== fn); res(r); } };
+    lineWaiters.push(fn);
+  });
+}
+const sendLine = t => send(new TextEncoder().encode(t + "\n"));
+async function displayInfo(){
+  const p = waitLine(l => l.startsWith("PW:INFO ") ? JSON.parse(l.slice(8)) : undefined, 2500);
+  await sendLine("PW:INFO");
+  const info = await p;
+  $("rotSel").value = String(info.rotation); $("rotSel").disabled = $("rotBtn").disabled = false;
+  const res = info.touch === "resistive";
+  $("calBtn").disabled = !res;
+  $("touchNote").textContent = res ? (info.calibrated ? "Resistive screen, calibrated. Recalibrate any time." : "Resistive screen: not calibrated yet.")
+                                   : info.touch === "capacitive" ? "Capacitive screen: no calibration needed." : "No touch screen found.";
+  return info;
+}
+async function closeSerial(){
+  if (!sp) return;
+  try { if (reader) { await reader.cancel(); reader.releaseLock(); } } catch {}
+  try { await sp.close(); } catch {}
+  sp = null; reader = null;
+}
+async function serialOpen(){
+  if (sp) return;
+  if (esp) { try { await esp.transport.disconnect(); } catch {} esp = null; $("chipNote").textContent = ""; setFlashButtons(); }
+  // reuse the port from flashing; boards on native USB come back as a new port after a reset, so ask then
+  try { sp = lastPort || await navigator.serial.requestPort(); await sp.open({ baudRate: 115200 }); }
+  catch (e) { if (!lastPort) throw e; lastPort = null; sp = await navigator.serial.requestPort(); await sp.open({ baudRate: 115200 }); }
+  lastPort = sp;
+  await sp.setSignals({ dataTerminalReady:false, requestToSend:false });   // let the board run, not sit in reset/boot
+  reader = sp.readable.getReader();
+  (async () => {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        const nb = new Uint8Array(rxBuf.length + value.length); nb.set(rxBuf); nb.set(value, rxBuf.length); rxBuf = nb;
+        const txt = new TextDecoder().decode(value).replace(/IMPROV[\s\S]{0,260}?\n/g, "");
+        textTail += txt; const lines = textTail.split("\n"); textTail = lines.pop();
+        lines.forEach(l => { l = l.trim(); if (!l) return; log(l); if (l.startsWith("PW:")) lineWaiters.slice().forEach(w => w(l)); });
+        const { packets, rest } = improvParse(rxBuf); rxBuf = rest.length > 4096 ? rest.slice(-512) : rest;
+        for (const pk of packets) { waiters.slice().forEach(w => w(pk)); }
+      }
+    } catch (e) { log("serial: " + e.message); }
+  })();
+}
+async function send(bytes){ const w = sp.writable.getWriter(); await w.write(bytes); w.releaseLock(); }
+function waitFor(pred, ms){
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => { waiters = waiters.filter(x => x !== fn); rej(new Error("timeout")); }, ms);
+    const fn = pk => { const r = pred(pk); if (r !== undefined) { clearTimeout(t); waiters = waiters.filter(x => x !== fn); res(r); } };
+    waiters.push(fn);
+  });
+}
+const ERR = {1:"invalid request", 2:"unknown command", 3:"couldn't connect — check the password and that it's a 2.4 GHz network", 255:"unknown error"};
+
+$("wifiConnect").onclick = async () => {
+  const st = $("wifiStatus");
+  try {
+    await serialOpen();
+    st.className = "status"; st.textContent = "Waiting for the display to start…";
+    let info = null;
+    for (let i = 0; i < 8 && !info; i++) {
+      await send(rpc(3, []));
+      info = await waitFor(pk => pk.type === 4 && pk.data[0] === 3 ? rpcStrings(pk.data).strings : undefined, 1500).catch(() => null);
+    }
+    if (!info) throw new Error("No answer from the display. Is the PortWatch firmware on it? Try unplugging and plugging it back in.");
+    $("devInfo").textContent = `${info[0]} ${info[1]} · ${info[3] || info[2]}`;
+    st.textContent = "Connected. Pick or type your network.";
+    $("scanBtn").disabled = false; $("wifiBtn").disabled = false;
+    await displayInfo().catch(() => { $("touchNote").textContent = "Couldn't read the display settings (older firmware?)."; });
+    scan();
+  } catch (e) { st.className = "status err"; st.textContent = e.message; }
+};
+async function scan(){
+  const sel = $("ssidSel"); sel.innerHTML = '<option value="">Scanning…</option>';
+  const nets = new Map();
+  const done = waitFor(pk => {
+    if (pk.type !== 4 || pk.data[0] !== 4) return undefined;
+    const s = rpcStrings(pk.data).strings;
+    if (!s.length) return true;
+    const prev = nets.get(s[0]); if (!prev || +s[1] > +prev[1]) nets.set(s[0], s);
+    return undefined;
+  }, 20000).catch(() => null);
+  await send(rpc(4, []));
+  await done;
+  sel.innerHTML = '<option value="">— pick a network —</option>' + [...nets.values()].sort((a,b) => b[1]-a[1])
+    .map(n => `<option value="${n[0].replace(/"/g,"&quot;")}">${n[0].replace(/</g,"&lt;")} (${n[1]} dBm${n[2]==="YES"?" 🔒":""})</option>`).join("");
+}
+setFlashButtons();
+$("scanBtn").onclick = scan;
+$("rotBtn").onclick = async () => {
+  const st = $("dispStatus"), r = $("rotSel").value;
+  st.className = "status"; st.textContent = "Setting orientation…";
+  try {
+    const ok = waitLine(l => l.startsWith("PW:OK ROT") ? true : l.startsWith("PW:ERR") ? l : undefined, 4000);
+    await sendLine("PW:ROT=" + r);
+    const res = await ok; if (res !== true) throw new Error(res.slice(7));
+    st.className = "status ok"; st.textContent = "Saved. The display is restarting in the new orientation.";
+    setTimeout(() => displayInfo().catch(() => {}), 6000);
+  } catch (e) { st.className = "status err"; st.textContent = "Couldn't set orientation: " + e.message; }
+};
+$("calBtn").onclick = async () => {
+  const st = $("dispStatus");
+  try {
+    const started = waitLine(l => l.startsWith("PW:OK CAL") ? true : l.startsWith("PW:ERR") ? l : undefined, 4000);
+    await sendLine("PW:CAL");
+    const r = await started; if (r !== true) throw new Error(r.slice(7));
+    st.className = "status"; st.textContent = "Follow the crosses on the display: tap the centre of each one (a stylus helps). Then try drawing, and tap Done or Redo.";
+    $("calBtn").disabled = true;
+    const end = await waitLine(l => l === "PW:CAL done" ? "done" : l === "PW:CAL cancelled" ? "cancelled" : undefined, 180000);
+    st.className = end === "done" ? "status ok" : "status err";
+    st.textContent = end === "done" ? "Touch calibrated and saved." : "Calibration cancelled.";
+    displayInfo().catch(() => {});
+  } catch (e) { st.className = "status err"; st.textContent = "Couldn't start calibration: " + e.message; }
+  $("calBtn").disabled = false;
+};
+$("ssidSel").onchange = () => { if ($("ssidSel").value) $("ssid").value = $("ssidSel").value; };
+$("wifiBtn").onclick = async () => {
+  const st = $("wifiStatus"), ssid = $("ssid").value.trim();
+  if (!ssid) { st.className = "status err"; st.textContent = "Enter your network name."; return; }
+  st.className = "status"; st.textContent = "Sending… the display is joining your Wi-Fi (up to 20 s).";
+  const result = waitFor(pk => {
+    if (pk.type === 2 && pk.data[0]) return { err: pk.data[0] };
+    if (pk.type === 4 && pk.data[0] === 1) return { url: rpcStrings(pk.data).strings[0] || "" };
+    return undefined;
+  }, 30000);
+  await send(rpc(1, [ssid, $("pass").value]));
+  try {
+    const r = await result;
+    if (r.err) { st.className = "status err"; st.textContent = "Wi-Fi failed: " + (ERR[r.err] || r.err); return; }
+    st.className = "status ok";
+    st.innerHTML = r.url ? `Connected! Settings page: <a href="${r.url}" target="_blank">${r.url}</a> (or http://portwatch.local)` : "Connected!";
+  } catch { st.className = "status err"; st.textContent = "No reply. Check the display's screen for status."; }
+};
+</script>
+</body>
+</html>
