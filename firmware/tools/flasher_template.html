@@ -56,6 +56,7 @@ pre{background:#03050a;border:1px solid var(--line);border-radius:10px;padding:1
     <h2><b>2</b> Flash</h2>
     <p class="note" style="margin:6px 0 0">Plug the board in with a data USB cable. If it won't connect, hold <b>BOOT</b>, tap <b>RESET</b>, release <b>BOOT</b>, then try again. On a Mac with a CH340 board, close any serial monitor first.</p>
     <label class="chk" style="margin-top:12px"><input type="checkbox" id="erase"> Erase everything first (clears saved Wi-Fi, settings and touch calibration)</label>
+    <label class="chk" style="margin-top:6px"><input type="checkbox" id="slow"> Safe speed (slower, but works with fussy USB cables and adapters)</label>
     <div class="row"><button class="main" id="connBtn" disabled>Connect</button><button class="main" id="flashBtn" disabled>Flash</button><button class="ghost" id="discBtn" disabled>Disconnect</button><span class="note" id="chipNote"></span></div>
     <div class="prog"><i id="bar"></i></div>
     <div class="status" id="flashStatus"></div>
@@ -81,7 +82,7 @@ pre{background:#03050a;border:1px solid var(--line);border-radius:10px;padding:1
     <div class="status" id="dispStatus"></div>
   </div>
 
-  <details><summary>Serial log</summary><pre id="log"></pre></details>
+  <details id="logBox"><summary>Serial log</summary><pre id="log"></pre></details>
   <p class="note">PortWatch shows data from the AnyPS5 project's public progress page. Pulse Systems.</p>
 </div>
 
@@ -164,6 +165,22 @@ async function loadEsptool(){
 }
 function toBinaryString(u8){ let s = ""; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return s; }
 
+function friendlyError(e){
+  const m = String(e && (e.message || e)) || "Unknown error";
+  if (/Failed to connect|Timeout|timed out|No serial data|Invalid head|sync/i.test(m))
+    return "The board didn't answer. Hold the <b>BOOT</b> button, click <b>Connect</b> again, and let go once it says Connected. If it still won't answer, try another USB cable (some only charge) and tick <b>Safe speed</b>.";
+  if (/open|already open|busy|Access denied|NetworkError|in use/i.test(m))
+    return "The USB port is busy. Close the Arduino IDE serial monitor or any other app using the board, unplug and replug it, then try again.";
+  if (/NotFoundError|No port selected/i.test(m)) return "No port picked. Click Connect and choose the board (on a Mac it's usually <b>usbserial</b> or <b>wchusbserial</b>).";
+  if (/disconnect|device has been lost|lost/i.test(m)) return "The board was unplugged or reset. Plug it back in and try again; a half-finished flash does no harm.";
+  return esc(m);
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function showErr(st, e){
+  console.error(e); log("ERROR: " + String(e && e.stack || e));
+  st.className = "status err"; st.innerHTML = friendlyError(e) + `<br><span style="color:var(--dim);font-size:12px">Details: ${esc(String(e && (e.message || e)))}. The serial log below has more.</span>`;
+  $("logBox").open = true;
+}
 let esp = null;        // { transport, loader, chip, port } while connected for flashing
 let lastPort = null;   // reused by step 3 so you aren't asked to pick the port again
 function setFlashButtons(){
@@ -172,9 +189,8 @@ function setFlashButtons(){
   $("flashBtn").disabled = !(esp && board && image);
   $("discBtn").disabled = !esp;
 }
-function chipMatches(chip){
-  const want = BOARDS[board].chip, c = chip.toUpperCase();
-  return want === "ESP32" ? c.startsWith("ESP32") && !/S2|S3|C2|C3|C5|C6|H2|P4/.test(c) : c.startsWith(want);
+function chipMatches(chip){   // chip is esptool's chip name: "ESP32", "ESP32-S3", ...
+  return chip.toUpperCase() === BOARDS[board].chip;
 }
 $("connBtn").onclick = async () => {
   const st = $("flashStatus");
@@ -182,21 +198,25 @@ $("connBtn").onclick = async () => {
     await closeSerial();
     st.className = "status"; st.textContent = "Loading flasher…";
     const { ESPLoader, Transport } = await loadEsptool();
-    const port = await navigator.serial.requestPort();
-    const transport = new Transport(port, true);
-    const term = { clean(){}, writeLine: s => log(s), write: s => logEl.textContent += s };
-    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200, terminal: term });
-    st.textContent = "Connecting…";
-    const chip = await loader.main();
-    esp = { transport, loader, chip, port }; lastPort = port;
-    $("chipNote").textContent = "Connected: " + chip;
+    let port;
+    try { port = await navigator.serial.requestPort(); }
+    catch (e) { if (e.name === "NotFoundError") { st.textContent = "No port picked."; setFlashButtons(); return; } throw e; }
+    const transport = new Transport(port, false);
+    const term = { clean(){}, writeLine: s => log(s), write: s => { logEl.textContent += s; } };
+    const loader = new ESPLoader({ transport, baudrate: $("slow").checked ? 115200 : 921600, romBaudrate: 115200, terminal: term, debugLogging: false });
+    st.textContent = "Connecting… (if nothing happens, hold BOOT on the board)";
+    esp = { transport, loader, chip: "", port };
+    const desc = await loader.main();
+    const chip = (loader.chip && loader.chip.CHIP_NAME) || desc;
+    esp.chip = chip; lastPort = port;
+    log("Found " + desc);
+    $("chipNote").textContent = "Connected: " + desc;
     if (board && !chipMatches(chip)) { st.className = "status err"; st.textContent = `This board is an ${chip}, but you picked ${BOARDS[board].chip}. Pick the other board above.`; }
     else { st.className = "status ok"; st.textContent = board && image ? "Connected. Ready to flash." : "Connected. Pick your board and firmware above."; }
   } catch (e) {
-    console.error(e); log(String(e && e.stack || e));
-    st.className = "status err"; st.textContent = (e && e.message) || String(e);
+    showErr(st, e);
     if (esp) try { await esp.transport.disconnect(); } catch {}
-    esp = null;
+    esp = null; $("chipNote").textContent = "";
   }
   setFlashButtons();
 };
@@ -221,8 +241,10 @@ $("flashBtn").onclick = async () => {
     bar.style.width = "100%";
     st.className = "status ok"; st.textContent = "Done. The display is restarting. Set up Wi-Fi and the display below.";
   } catch (e) {
-    console.error(e); log(String(e && e.stack || e));
-    st.className = "status err"; st.textContent = (e && e.message) || String(e);
+    showErr(st, e);
+    if (!$("slow").checked && /timeout|timed out|invalid|checksum|md5/i.test(String(e && e.message))) {
+      st.innerHTML += "<br><b>Tip:</b> tick <b>Safe speed</b>, then Connect and Flash again.";
+    }
     try { await esp.transport.disconnect(); } catch {}
   }
   esp = null; $("chipNote").textContent = "";
