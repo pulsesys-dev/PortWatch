@@ -26,7 +26,7 @@ for board in ("cyd", "guition"):
         blocks.append(f'<script type="application/octet-stream" id="fw-{board}">{base64.b64encode(data).decode()}</script>')
         found.append(f"{board} ({len(data)//1024} KB)")
 blocks.append(f'<script type="application/json" id="fw-meta">{json.dumps({"version": ver})}</script>')
-lib = os.path.join(here, "esptool.bundle.js")   # esptool-js 0.5.7 (Apache-2.0), so flashing works offline
+lib = os.path.join(here, "esptool.bundle.js")   # esptool-js 0.7.0 (Apache-2.0), the version the LapLogic flasher uses, so flashing works offline
 if os.path.exists(lib):
     blocks.append(f'<script type="text/plain" id="esptool-src">{base64.b64encode(open(lib, "rb").read()).decode()}</script>')
 html = tpl.replace("<!--FIRMWARE-->", "\n".join(blocks))

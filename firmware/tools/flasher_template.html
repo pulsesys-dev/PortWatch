@@ -159,11 +159,11 @@ async function loadEsptool(){
     if (el) {
       const url = URL.createObjectURL(new Blob([atob(el.textContent.trim())], { type: "text/javascript" }));
       esptool = await import(url);
-    } else esptool = await import("https://unpkg.com/esptool-js@0.5.7/bundle.js");
+    } else esptool = await import("https://unpkg.com/esptool-js@0.7.0/bundle.js");
   }
   return esptool;
 }
-function toBinaryString(u8){ let s = ""; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return s; }
+
 
 function friendlyError(e){
   const m = String(e && (e.message || e)) || "Unknown error";
@@ -234,8 +234,17 @@ $("flashBtn").onclick = async () => {
     const { loader, transport } = esp;
     if ($("erase").checked) { st.className = "status"; st.textContent = "Erasing flash…"; await loader.eraseFlash(); }
     st.className = "status"; st.textContent = "Writing firmware…";
-    await loader.writeFlash({ fileArray:[{ data: toBinaryString(image), address: 0 }], flashSize:"keep", flashMode:"keep", flashFreq:"keep",
-      eraseAll:false, compress:true, reportProgress:(i, written, total) => { bar.style.width = (100 * written / total).toFixed(1) + "%"; } });
+    // Skip the settings area (0x9000-0xDFFF) so Wi-Fi, settings and touch calibration survive an update.
+    // "Erase everything first" clears them on purpose.
+    const NVS_START = 0x9000, NVS_END = 0xE000;
+    const parts = $("erase").checked ? [{ data: image, address: 0 }]
+      : [{ data: image.subarray(0, NVS_START), address: 0 }, { data: image.subarray(NVS_END), address: NVS_END }];
+    const sizes = parts.map(p => p.data.length), all = sizes.reduce((a, b) => a + b, 0);
+    await loader.writeFlash({ fileArray: parts, flashSize:"keep", flashMode:"keep", flashFreq:"keep", eraseAll:false, compress:true,
+      reportProgress:(i, written, total) => {
+        const before = sizes.slice(0, i).reduce((a, b) => a + b, 0), f = total ? written / total : 0;
+        bar.style.width = (100 * (before + f * sizes[i]) / all).toFixed(1) + "%";
+      } });
     await loader.after("hard_reset");
     await transport.disconnect();
     bar.style.width = "100%";
