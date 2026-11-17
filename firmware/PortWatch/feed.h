@@ -10,6 +10,7 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "model.h"
+#include <LittleFS.h>
 
 // ---- state shared with the UI ----
 volatile uint32_t dlBytes = 0, dlTotal = 0;
@@ -119,6 +120,61 @@ void fetchTask(void *) {
     if (WiFi.status() != WL_CONNECTED) waitMs = 5000;
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs));   // woken early by "refresh now"
   }
+}
+
+// ---- keep the last data in flash: show it at power-on and only re-download when the feed changes ----
+const uint32_t CACHE_MAGIC = 0x50574331;   // "PWC1"
+const uint16_t CACHE_VER = 1;
+struct CacheHead {
+  uint32_t magic; uint16_t ver, nLibs, nHist; uint8_t hasShader, legacy, hasPr, nAreas;
+  uint32_t done, total; float percent;
+  uint32_t fTotal, fDecoded, fTranslated, dppTotal, dppDecoded, throws;
+  uint16_t fmtTotal, fmtSampled, fmtBuffer, fmtHost;
+  uint32_t prDone; float prPercent; int64_t published;
+  char etag[96]; Area areas[8];
+};
+bool fsOk = false;
+void cacheBegin() { fsOk = LittleFS.begin(true); if (!fsOk) Serial.println("Cache: no flash file system"); }
+void cacheSave(const Model *m) {
+  if (!fsOk || !m) return;
+  CacheHead h{}; h.magic = CACHE_MAGIC; h.ver = CACHE_VER; h.nLibs = m->nLibs; h.nHist = m->nHist;
+  h.hasShader = m->hasShader; h.legacy = m->legacy; h.hasPr = m->hasPr; h.nAreas = m->nAreas;
+  h.done = m->done; h.total = m->total; h.percent = m->percent;
+  h.fTotal = m->fTotal; h.fDecoded = m->fDecoded; h.fTranslated = m->fTranslated; h.dppTotal = m->dppTotal; h.dppDecoded = m->dppDecoded; h.throws = m->throws;
+  h.fmtTotal = m->fmtTotal; h.fmtSampled = m->fmtSampled; h.fmtBuffer = m->fmtBuffer; h.fmtHost = m->fmtHost;
+  h.prDone = m->prDone; h.prPercent = m->prPercent; h.published = m->published;
+  strlcpy(h.etag, etag.c_str(), sizeof h.etag); memcpy(h.areas, m->areas, sizeof h.areas);
+  File f = LittleFS.open("/feed.bin", "w");
+  if (!f) return;
+  bool ok = f.write((const uint8_t *)&h, sizeof h) == sizeof h
+         && f.write((const uint8_t *)m->libs, sizeof(Lib) * m->nLibs) == sizeof(Lib) * m->nLibs
+         && (!m->nHist || f.write((const uint8_t *)m->hist, sizeof(HistPt) * m->nHist) == sizeof(HistPt) * m->nHist);
+  f.close();
+  if (!ok) LittleFS.remove("/feed.bin");
+  Serial.printf("Cache: saved %u libraries, %u days\n", m->nLibs, m->nHist);
+}
+Model *cacheLoad() {
+  if (!fsOk || !LittleFS.exists("/feed.bin")) return nullptr;
+  File f = LittleFS.open("/feed.bin", "r");
+  if (!f) return nullptr;
+  CacheHead h;
+  if (f.read((uint8_t *)&h, sizeof h) != sizeof h || h.magic != CACHE_MAGIC || h.ver != CACHE_VER || !h.nLibs) { f.close(); return nullptr; }
+  Model *m = new Model();
+  m->libs = (Lib *)malloc(sizeof(Lib) * h.nLibs);
+  m->hist = h.nHist ? (HistPt *)malloc(sizeof(HistPt) * h.nHist) : nullptr;
+  bool ok = m->libs && f.read((uint8_t *)m->libs, sizeof(Lib) * h.nLibs) == sizeof(Lib) * h.nLibs
+         && (!h.nHist || (m->hist && f.read((uint8_t *)m->hist, sizeof(HistPt) * h.nHist) == sizeof(HistPt) * h.nHist));
+  f.close();
+  if (!ok) { delete m; return nullptr; }
+  m->nLibs = h.nLibs; m->nHist = h.nHist; m->hasShader = h.hasShader; m->legacy = h.legacy; m->hasPr = h.hasPr; m->nAreas = min((uint8_t)8, h.nAreas);
+  m->done = h.done; m->total = h.total; m->percent = h.percent;
+  m->fTotal = h.fTotal; m->fDecoded = h.fDecoded; m->fTranslated = h.fTranslated; m->dppTotal = h.dppTotal; m->dppDecoded = h.dppDecoded; m->throws = h.throws;
+  m->fmtTotal = h.fmtTotal; m->fmtSampled = h.fmtSampled; m->fmtBuffer = h.fmtBuffer; m->fmtHost = h.fmtHost;
+  m->prDone = h.prDone; m->prPercent = h.prPercent; m->published = (time_t)h.published;
+  memcpy(m->areas, h.areas, sizeof h.areas);
+  h.etag[sizeof h.etag - 1] = 0; etag = h.etag;   // next check asks "changed since this?" and gets a tiny 304 if not
+  Serial.printf("Cache: loaded %u libraries, %u days\n", m->nLibs, m->nHist);
+  return m;
 }
 
 void fetchBegin() {

@@ -28,7 +28,7 @@
 #include "web.h"
 
 uint32_t lastTouch = 0, lastCycle = 0, lastHeader = 0, lastBl = 0, wakeUntil = 0, celebUntil = 0, lastLoading = 0;
-bool showingInfo = false, pressed = false, longFired = false, wasConnected = false;
+bool pressed = false, longFired = false, wasConnected = false;
 uint32_t pressStart = 0; int16_t pressX = 0, pressY = 0;
 
 // ---------- Wi-Fi ----------
@@ -61,11 +61,10 @@ void leaveAP() {
 }
 
 // ---------- screens ----------
-bool screenOn(uint8_t s) { return S.screenMask & (1 << s); }
-void stepScreen(int dir) {
+void stepScreen(int dir, bool autoRotate = false) {
   for (int i = 0; i < SC_COUNT; i++) {
     screen = (screen + SC_COUNT + dir) % SC_COUNT;
-    if (screenOn(screen)) break;
+    if (screenEnabled(screen) && !(autoRotate && screen == SC_INFO)) break;
   }
   drawScreen();
 }
@@ -106,8 +105,7 @@ uint32_t lastTapAt = 0; int8_t lastTapSide = 0;
 void onTap(int16_t x, int16_t y) {
   (void)y;
   if (celebUntil) { celebUntil = 0; ledSet(0, 0, 0); drawScreen(); return; }
-  if (showingInfo) { showingInfo = false; drawScreen(); return; }
-  if (!model) return;
+  if (!model && screen != SC_INFO) return;
   int8_t side = x < W * 3 / 10 ? -1 : x > W * 7 / 10 ? 1 : 0;
   uint32_t now = millis();
   if (side) {
@@ -152,7 +150,7 @@ void pollTouch() {
     if (!pressed) { pressed = true; longFired = false; pressStart = now; pressX = x; pressY = y; }
     if (!longFired && now - pressStart > 2000) {
       longFired = true; lastTouch = now;
-      showingInfo = true; drawInfo();
+      screen = SC_INFO; drawScreen();
     }
   } else if (pressed) {
     pressed = false; lastTouch = now;
@@ -191,20 +189,23 @@ void setup() {
   }
 
   moversLoad();
+  cacheBegin();
+  model = cacheLoad();                 // last data, so the dashboard shows straight away
+  if (model) drawScreen();
   improv::connectFn = connectWifi;
   improv::urlFn = deviceUrl;
   improv::cmdFn = handleCommand;
 
   // Wi-Fi has to be running before the web server starts (the network stack starts with it)
   if (S.ssid.length()) {
-    drawLoading();
+    if (!model) drawLoading();
     if (connectWifi(S.ssid, S.pass, 20000)) onConnected();
     else { startAP(); WiFi.begin(S.ssid.c_str(), S.pass.c_str()); }   // keep trying the saved network in the background
   } else startAP();
   webBegin();
   fetchBegin();
   wasConnected = WiFi.status() == WL_CONNECTED;
-  drawLoading();
+  if (model) drawScreen(); else drawLoading();
 }
 
 void loop() {
@@ -229,12 +230,12 @@ void loop() {
     Model *m = (Model *)pendingModel;
     int32_t gain = applySnapshot(m);
     delete model; model = m; pendingModel = nullptr;
-    buildBySize();
+    cacheSave(model);
     if (gain > 0) {
       celebUntil = now + 8000; drawCelebration(gain);
       if (S.ledOn) ledSet(0, 1, 0);
       wakeUntil = now + 60000; updateBacklight();
-    } else if (!showingInfo) drawScreen();
+    } else drawScreen();
   }
 
   if (!model) {
@@ -242,8 +243,8 @@ void loop() {
   } else if (celebUntil) {
     if (S.ledOn) ledSet(0, ((now / 400) % 2) == 0, 0);
     if (now > celebUntil) { celebUntil = 0; ledSet(0, 0, 0); drawScreen(); }
-  } else if (!showingInfo) {
-    if (S.cycleSec && now - lastTouch > 60000 && now - lastCycle > S.cycleSec * 1000UL) { lastCycle = now; stepScreen(1); }
+  } else {
+    if (S.cycleSec && now - lastTouch > 60000 && now - lastCycle > S.cycleSec * 1000UL) { lastCycle = now; stepScreen(1, true); }
     if (now - lastHeader > (fetching ? 1000UL : 30000UL)) { lastHeader = now; drawHeaderOnly(); }
   }
 

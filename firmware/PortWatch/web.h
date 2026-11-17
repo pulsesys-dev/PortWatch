@@ -74,7 +74,7 @@ void pageSettings() {
   h += "<label>Change screen every <select name=cycle>" + opt(0, S.cycleSec, "Never (tap to change)") + opt(10, S.cycleSec, "10 s") + opt(20, S.cycleSec, "20 s") + opt(30, S.cycleSec, "30 s") + opt(60, S.cycleSec, "1 min") + "</select></label>";
   h += "<label>Orientation <select name=rot>" + opt(0, S.rotation, "Landscape") + opt(1, S.rotation, "Landscape, flipped") + opt(2, S.rotation, "Portrait") + opt(3, S.rotation, "Portrait, flipped") + "</select></label>";
   h += "</div><div class=card><h2>Screens in rotation</h2>";
-  for (int i = 0; i < SC_COUNT; i++) h += "<label>" + String(screenNames[i]) + " " + chk((String("sc") + i).c_str(), S.screenMask & (1 << i)) + "</label>";
+  for (int i = 0; i < SC_INFO; i++) h += "<label>" + String(screenNames[i]) + " " + chk((String("sc") + i).c_str(), S.screenMask & (1 << i)) + "</label>";
   h += "</div><div class=card><h2>Feed</h2>";
   h += "<label>Check every <select name=refresh>" + opt(10, S.refreshMin, "10 min") + opt(30, S.refreshMin, "30 min") + opt(60, S.refreshMin, "1 hour") + opt(180, S.refreshMin, "3 hours") + "</select></label>";
   h += "<label>Time zone (POSIX) <input name=tz value='" + esc(S.tz) + "'></label>";
@@ -118,7 +118,7 @@ void handleSave() {
   S.cycleSec = argi("cycle", S.cycleSec);
   S.rotation = constrain(argi("rot", S.rotation), 0, 3);
   S.refreshMin = max(5, argi("refresh", S.refreshMin));
-  uint8_t mask = 0; for (int i = 0; i < SC_COUNT; i++) if (server.hasArg(String("sc") + i)) mask |= 1 << i;
+  uint8_t mask = 0; for (int i = 0; i < SC_INFO; i++) if (server.hasArg(String("sc") + i)) mask |= 1 << i;
   S.screenMask = mask ? mask : 1;
   if (server.hasArg("tz") && server.arg("tz").length()) S.tz = server.arg("tz");
   String newFeed = server.arg("feed"); newFeed.trim();
@@ -138,7 +138,7 @@ void handleSave() {
   if (S.rotation != oldRot || S.cydPanel != oldPanel || S.touchMode != oldTouch) {
     redirectHome("Saved. Restarting to apply the display change…"); rebootPending = true;
   } else redirectHome();
-  if (!(S.screenMask & (1 << screen))) screen = SC_OVERVIEW;
+  if (!screenEnabled(screen)) screen = SC_OVERVIEW;
 }
 
 void handleWifi() {

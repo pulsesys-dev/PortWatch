@@ -25,7 +25,7 @@ struct Settings {
   String   feed        = "";    // blank = official AnyPS5 Pages site
   String   ssid, pass;
   bool     hasScreens  = true;  // reserved
-  uint8_t  screenMask  = 0x1F;  // which screens are in the rotation (bit per screen)
+  uint8_t  screenMask  = 0x0F;  // which screens are in the rotation (bit per screen; Device info is always there)
 };
 
 Settings S;
@@ -55,10 +55,10 @@ void loadSettings() {
   S.feed        = prefs.getString("feed", S.feed);
   S.ssid        = prefs.getString("ssid", "");
   S.pass        = prefs.getString("pass", "");
-  S.screenMask  = prefs.getUChar("screens", S.screenMask);
+  S.screenMask  = prefs.getUChar("scr", S.screenMask) & 0x0F;
   prefs.end();
   if (S.refreshMin < 5) S.refreshMin = 5;
-  if (!S.screenMask) S.screenMask = 0x1F;
+  if (!S.screenMask) S.screenMask = 0x0F;
 }
 
 void saveSettings() {
@@ -77,7 +77,7 @@ void saveSettings() {
   prefs.putBool("led", S.ledOn);
   prefs.putString("tz", S.tz);
   prefs.putString("feed", S.feed);
-  prefs.putUChar("screens", S.screenMask);
+  prefs.putUChar("scr", S.screenMask);
   prefs.end();
 }
 

@@ -9,12 +9,17 @@ A desk display for the **AnyPS5** PS5-emulator project's reimplementation progre
 | Board flasher (Chrome/Edge, Mac or Windows) | `PortWatch-Flasher.html`, or `firmware/out/PortWatch-Flasher.html` after building (firmware included) |
 | Firmware source (CYD + Guition C/R, one codebase) | `firmware/` |
 
-## Screens (boards and web)
-1. **Overview**: ring with % of library functions implemented, implemented/declared counts, gains over 7 and 30 days, libraries complete, shader forms, and the estimate including open PRs.
-2. **% per day**: a candle chart with % implemented on the vertical axis and calendar days across. Each candle opens at the previous day's % and closes at that day's %. Green means the % went up. Red means it went down, which usually happens when a batch of newly *declared* functions raises the total. Blue bars along the bottom show functions implemented that day. The feed has one data point per day, so the wicks show the same range as the candle body.
-3. **Libraries**: tap the centre of the screen to change the sort: Moved since the last update / Almost done / Most left / Biggest.
-4. **Shader recompiler**: forms decoded and translated, DPP, image formats, and unsupported throw sites.
-5. **Every library**: one tile per library, coloured by % (green = 100%).
+## Screens
+**Boards (CYD and Guition):**
+1. **Overview**: ring with % of library functions implemented, functions implemented, gains over 7 and 30 days and the latest day, libraries complete, and the estimate including open PRs.
+2. **Last 7 days**: candle chart. % implemented runs up the side and the last 7 calendar days run across. Each candle opens at the previous day's % and closes at that day's %: green means it went up, red means it went down (usually because newly *declared* functions raised the total). Blue bars show functions implemented that day.
+3. **Daily progress**: the latest day's gain, big, then one row per day with functions implemented and the change in %. Days without commits are shown dimmed.
+4. **Libraries**: tap the centre of the screen to change the sort: Moved since the last update / Almost done / Most left / Biggest.
+5. **Device info**: IP address, Wi-Fi, signal, board, touch, memory, and when the feed was published. Auto-rotate skips it; double-tap to it or hold the screen for 2 s.
+
+**Web version:** all of the above plus Shader recompiler and Every library (a tile per library).
+
+**Data use:** the board saves the last feed it loaded and shows it straight away at power-on. Each check asks GitHub "has this changed?" and gets a tiny "no" back most of the time. The full ~2.6 MB `progress.json` is only downloaded when AnyPS5 publishes an update.
 
 When a feed update adds functions, the board shows a full-screen **"+312 functions implemented"** and the CYD's rear LED flashes green.
 

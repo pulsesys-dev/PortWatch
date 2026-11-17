@@ -25,11 +25,12 @@ const int HDR = 26, ROWH = 30;
 #endif
 #define F_TINY ((const GFXfont *)nullptr)
 
-enum Screen : uint8_t { SC_OVERVIEW, SC_HISTORY, SC_LIBS, SC_SHADER, SC_MAP, SC_COUNT };
-const char *screenNames[SC_COUNT] = {"Overview", "History", "Libraries", "Shader recompiler", "Library map"};
+enum Screen : uint8_t { SC_OVERVIEW, SC_HISTORY, SC_DAILY, SC_LIBS, SC_INFO, SC_COUNT };
+const char *screenNames[SC_COUNT] = {"Overview", "Last 7 days", "Daily progress", "Libraries", "Device info"};
+// Device info is always available (double-tap to it, or hold the screen); auto-rotate skips it
+inline bool screenEnabled(uint8_t s) { return s == SC_INFO || (S.screenMask >> s) & 1; }
 uint8_t screen = SC_OVERVIEW, libMode = 1;   // 0 moved, 1 almost done, 2 most left, 3 biggest
 Model *model = nullptr;
-uint16_t *bySize = nullptr;                  // library indexes, biggest first (for the map)
 
 // ---------- text helpers ----------
 void txt(const GFXfont *f, int x, int y, const char *s, uint16_t c, uint8_t align = 0) {
@@ -117,9 +118,9 @@ void header(const char *title, const char *right = nullptr, uint16_t rightCol = 
 }
 
 void pageDots() {
-  int n = 0; for (int i = 0; i < SC_COUNT; i++) if (S.screenMask & (1 << i)) n++;
+  int n = 0; for (int i = 0; i < SC_COUNT; i++) if (screenEnabled(i)) n++;
   int x = W / 2 - (n - 1) * 5, k = 0;
-  for (int i = 0; i < SC_COUNT; i++) if (S.screenMask & (1 << i)) {
+  for (int i = 0; i < SC_COUNT; i++) if (screenEnabled(i)) {
     g->fillCircle(x + k * 10, H - 6, 2, i == screen ? C_ACCENT2 : C_LINE); k++;
   }
 }
@@ -185,11 +186,7 @@ void drawOverview() {
     snprintf(b, sizeof b, "%lu/%lu", (unsigned long)model->libsComplete(), (unsigned long)model->libsWithFns());
     statRow(x0, cw, y, "Libs done", b, C_FG); y += step;
   }
-  if (model->hasShader && y < bottom) {
-    if (narrow) snprintf(b, sizeof b, "%.0f%%", model->fTotal ? 100.0 * model->fDecoded / model->fTotal : 0.0);
-    else snprintf(b, sizeof b, "%lu/%lu", (unsigned long)model->fDecoded, (unsigned long)model->fTotal);
-    statRow(x0, cw, y, model->legacy ? "Opcodes" : (narrow ? "Shaders" : "Shader forms"), b, model->fDecoded >= model->fTotal ? C_OK : C_FG); y += step;
-  }
+  if (gn.ok && y < bottom) { fmtSigned(gn.day, b); statRow(x0, cw, y, "Last day", b, gn.day > 0 ? C_OK : C_FG); y += step; }
   if (model->hasPr && y < bottom) { fmtNum(model->prDone, t); statRow(x0, cw, y, narrow ? "Open PRs" : "With open PRs", t, C_ACCENT2); }
   pageDots();
 }
@@ -201,19 +198,20 @@ void drawOverview() {
 void drawHistory() {
   Gains gn = gains();
   char r[32] = "";
-  if (gn.ok) { char t[16]; fmtSigned(gn.week, t); snprintf(r, sizeof r, "%s fns / 7 days", t); }
-  header("% PER DAY", gn.ok ? r : nullptr, C_OK);
+  if (gn.ok) { char t[16]; fmtSigned(gn.week, t); snprintf(r, sizeof r, "%s functions", t); }
+  header("LAST 7 DAYS  %", gn.ok ? r : nullptr, C_OK);
   if (!model->hist || model->nHist < 2) { txt(F_S, W / 2, H / 2, "No history yet", C_DIM, 1); pageDots(); return; }
   const HistPt *h = model->hist; int n = model->nHist;
   const int padL = 32, padR = 6, top = HDR + 8, volH = H * 0.12f, bottom = H - 14 - volH - 16;
   const int cw = W - padL - padR, ch = bottom - top;
-  const int minSlot = 6;
   int32_t dLast = h[n - 1].day;
-  int days = min((int)(dLast - h[0].day + 1), max(2, cw / minSlot));
+  const int days = 7;
   int32_t dFirst = dLast - days + 1;
   int first = 0; while (first < n - 1 && h[first].day < dFirst) first++;
   auto pct = [&](int i) { return h[i].total ? 100.0f * h[i].done / h[i].total : 0.0f; };
   float lo = 100, hi = 0; int32_t maxG = 1;
+  if (h[first].day < dFirst) first = n;   // nothing inside the last 7 days
+  if (first >= n) { lo = 0; hi = 100; }
   for (int i = first; i < n; i++) {
     float o = i ? pct(i - 1) : pct(i), c = pct(i);
     lo = min(lo, min(o, c)); hi = max(hi, max(o, c));
@@ -232,7 +230,7 @@ void drawHistory() {
   }
   // day labels, ~44 px apart, counted back from the latest day
   const int steps[] = {1, 2, 3, 7, 14, 30}; int every = 30;
-  for (int sDays : steps) if (sDays * slot >= 44) { every = sDays; break; }
+  for (int sDays : steps) if (sDays * slot >= 34) { every = sDays; break; }
   for (int32_t d = dLast; d >= dFirst; d -= every) {
     time_t t = (time_t)d * 86400; struct tm tmv; gmtime_r(&t, &tmv);
     char lb[8]; snprintf(lb, sizeof lb, "%d/%d", tmv.tm_mday, tmv.tm_mon + 1);
@@ -251,6 +249,55 @@ void drawHistory() {
     g->fillRect(x - bw / 2, yt, max(1, bw), bh, col);          // body
     int32_t gain = i ? (int32_t)h[i].done - (int32_t)h[i - 1].done : 0;
     if (gain > 0) { int vh = max(1, (int)((int64_t)gain * volH / maxG)); g->fillRect(x - bw / 2, vBase - vh, max(1, bw), vh, C_ACCENT); }
+  }
+  pageDots();
+}
+
+// Daily progress: the latest commit day big, then one row per calendar day (newest first):
+// functions implemented that day (bar + number) and how the % moved.
+static const char *WD[7] = {"Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"};   // day 0 = 1 Jan 1970, a Thursday
+static void dayLabel(int32_t day, char *out, size_t n) {
+  time_t t = (time_t)day * 86400; struct tm tmv; gmtime_r(&t, &tmv);
+  snprintf(out, n, "%s %d", WD[((day % 7) + 7) % 7], tmv.tm_mday);
+}
+void drawDaily() {
+  if (!model->hist || model->nHist < 2) { header("DAILY PROGRESS"); txt(F_S, W / 2, H / 2, "No history yet", C_DIM, 1); pageDots(); return; }
+  const HistPt *h = model->hist; int n = model->nHist;
+  const HistPt &last = h[n - 1], &prev = h[n - 2];
+  int32_t gain = (int32_t)last.done - (int32_t)prev.done;
+  float pl = last.total ? 100.0f * last.done / last.total : 0, pp = prev.total ? 100.0f * prev.done / prev.total : 0;
+  char d[16]; dayLabel(last.day, d, sizeof d);
+  char r[24]; snprintf(r, sizeof r, "latest %s", d);
+  header("DAILY PROGRESS", r, C_ACCENT2);
+  // summary: latest day's gain, big
+  char b[24]; fmtSigned(gain, b);
+  int y = HDR + (H > 250 ? 40 : 34);
+  txt(F_XL, 12, y, b, gain > 0 ? C_OK : C_DIM);
+  int bx = 12 + textW(F_XL, b) + 12;
+  txt(F_S, bx, y - (H > 250 ? 20 : 17), "functions", C_MUTED);
+  snprintf(b, sizeof b, "%+.2f pts", pl - pp);
+  txt(F_SB, bx, y + 1, b, pl >= pp ? C_OK : C_BAD);
+  // one row per calendar day
+  int rowH = H > 250 ? 26 : 22, top = y + 14, rows = min(14, (H - 14 - top) / rowH);
+  auto at = [&](int32_t day) -> int { for (int i = n - 1; i >= 0 && h[i].day >= day; i--) if (h[i].day == day) return i; return -1; };
+  int32_t maxG = 1;
+  for (int k = 0; k < rows; k++) { int i = at(last.day - k); if (i > 0) maxG = max(maxG, (int32_t)h[i].done - (int32_t)h[i - 1].done); }
+  int dateW = textW(F_S, "Wed 30") + 8, ptsW = W >= 300 ? textW(F_TINY, "+0.00") + 10 : 0, numW = textW(F_SB, "+8,888") + 8;
+  int barX = 10 + dateW, barW = W - 10 - barX - numW - ptsW;
+  for (int k = 0; k < rows; k++) {
+    int32_t day = last.day - k; int i = at(day);
+    int ry = top + k * rowH + rowH - 7;
+    if (k % 2 == 0) g->fillRect(6, ry - rowH + 9, W - 12, rowH - 2, C_PANEL);
+    char lbl[16]; dayLabel(day, lbl, sizeof lbl);
+    txt(F_S, 10, ry, lbl, i >= 0 ? C_FG : C_DIM);
+    if (i <= 0) { txt(F_TINY, barX, ry - 1, i == 0 ? "first day" : "no commits", C_DIM); continue; }
+    int32_t gday = (int32_t)h[i].done - (int32_t)h[i - 1].done;
+    if (gday > 0) g->fillRoundRect(barX, ry - 9, max(3, (int)((int64_t)gday * barW / maxG)), 7, 3, C_ACCENT);
+    fmtSigned(gday, b); txt(F_SB, W - 10 - ptsW, ry, b, gday > 0 ? C_FG : C_DIM, 2);
+    if (ptsW) {
+      float a1 = h[i].total ? 100.0f * h[i].done / h[i].total : 0, a0 = h[i - 1].total ? 100.0f * h[i - 1].done / h[i - 1].total : 0;
+      snprintf(b, sizeof b, "%+.2f", a1 - a0); txt(F_TINY, W - 10, ry - 1, b, a1 >= a0 ? C_OK : C_BAD, 2);
+    }
   }
   pageDots();
 }
@@ -307,90 +354,6 @@ void drawLibs() {
   pageDots();
 }
 
-void shaderRow(int x, int w, int y, const char *label, uint32_t v, uint32_t of, uint16_t col, int labelW) {
-  txt(F_S, x, y, label, C_MUTED);
-  char a[24], b[12]; fmtNum(v, a); fmtNum(of, b); strcat(a, "/"); strcat(a, b);
-  int cw = textW(F_S, a);
-  txt(F_S, x + w, y, a, C_FG, 2);
-  if (W < 300) bar(x, y + 5, w, 5, of ? (float)v / of : 0, col);          // narrow: bar on its own line
-  else bar(x + labelW, y - 8, w - labelW - cw - 10, 6, of ? (float)v / of : 0, col);
-}
-void drawShader() {
-  header("SHADER RECOMPILER", model->legacy ? "legacy count" : "AMD RDNA 2");
-  if (!model->hasShader) { txt(F_S, W / 2, H / 2, "No shader data in feed", C_DIM, 1); pageDots(); return; }
-  bool two = W >= 400 && model->nAreas;
-  int colW = two ? W * 0.58f : W - 20, x = 10, y = HDR + 20, step = W < 300 ? 34 : H > 250 ? 30 : 26, lw = 0;
-  const char *labels[] = {"Forms decoded", "Translator", "DPP decoded", "Sampled fmt", "Typed buffer", "Vulkan host"};
-  for (const char *l : labels) lw = max(lw, textW(F_S, l) + 10);
-  if (model->legacy) shaderRow(x, colW, y, "Opcode names", model->fDecoded, model->fTotal, C_ACCENT, lw);
-  else {
-    shaderRow(x, colW, y, "Forms decoded", model->fDecoded, model->fTotal, C_ACCENT, lw); y += step;
-    shaderRow(x, colW, y, "Translator", model->fTranslated, model->fTotal, C_ACCENT, lw); y += step;
-    if (model->dppTotal) { shaderRow(x, colW, y, "DPP decoded", model->dppDecoded, model->dppTotal, C_ACCENT, lw); y += step; }
-    if (model->fmtTotal) {
-      shaderRow(x, colW, y, "Sampled fmt", model->fmtSampled, model->fmtTotal, C_ACCENT, lw); y += step;
-      shaderRow(x, colW, y, "Typed buffer", model->fmtBuffer, model->fmtTotal, C_ACCENT, lw); y += step;
-      shaderRow(x, colW, y, "Vulkan host", model->fmtHost, model->fmtTotal, C_ACCENT, lw); y += step;
-    }
-    if (!two && y < H - 14) { char b[32]; snprintf(b, sizeof b, "%lu", (unsigned long)model->throws); statRow(x, colW, y, "Unsupported throws", b, C_WARN); }
-  }
-  if (two) {
-    int ax = 10 + colW + 18, aw = W - ax - 10, ay = HDR + 20;
-    char t[40]; snprintf(t, sizeof t, "THROWS  %lu", (unsigned long)model->throws);
-    txt(F_TINY, ax, ay - 4, t, C_DIM);
-    uint16_t mx = 1; for (int i = 0; i < model->nAreas; i++) mx = max(mx, model->areas[i].count);
-    ay += 16;
-    for (int i = 0; i < model->nAreas && ay < H - 14; i++) {
-      char nm[28]; strlcpy(nm, model->areas[i].name, sizeof nm); fit(F_TINY, nm, aw - 28);
-      txt(F_TINY, ax, ay, nm, C_MUTED);
-      char c[8]; snprintf(c, sizeof c, "%u", model->areas[i].count); txt(F_TINY, ax + aw, ay, c, C_FG, 2);
-      g->fillRect(ax, ay + 4, max(2, aw * model->areas[i].count / mx), 4, C_WARN);
-      ay += 22;
-    }
-  }
-  pageDots();
-}
-
-uint16_t tileColour(float p) {
-  if (p >= 0.999f) return C_OK;
-  const uint8_t s[3][3] = {{26, 36, 66}, {29, 79, 184}, {64, 140, 255}};
-  int a = p > 0.5f ? 1 : 0; float t = p > 0.5f ? (p - 0.5f) * 2 : p * 2;
-  uint8_t r = s[a][0] + (s[a + 1][0] - s[a][0]) * t, gg = s[a][1] + (s[a + 1][1] - s[a][1]) * t, b = s[a][2] + (s[a + 1][2] - s[a][2]) * t;
-  return ((r & 0xF8) << 8) | ((gg & 0xFC) << 3) | (b >> 3);
-}
-void drawMap() {
-  uint32_t real = model->libsWithFns();
-  char r[40]; snprintf(r, sizeof r, "%lu done of %lu", (unsigned long)model->libsComplete(), (unsigned long)real);
-  header("EVERY LIBRARY", r, C_OK);
-  if (!bySize || !real) { pageDots(); return; }
-  int top = HDR + 4, aw = W - 16, ah = H - top - 14;
-  int side = (int)sqrtf((float)aw * ah / real);
-  int cols, rowsN;
-  for (;;) { cols = aw / side; rowsN = (real + cols - 1) / cols; if (rowsN * side <= ah || side <= 3) break; side--; }
-  int gap = side >= 8 ? 2 : 1, x0 = (W - cols * side) / 2;
-  for (uint32_t k = 0; k < real; k++) {
-    const Lib &l = model->libs[bySize[k]];
-    int cx = x0 + (k % cols) * side, cy = top + (k / cols) * side;
-    g->fillRect(cx, cy, side - gap, side - gap, tileColour((float)l.done / (l.done + l.todo)));
-  }
-  pageDots();
-}
-
-void buildBySize() {
-  free(bySize); bySize = nullptr;
-  if (!model || !model->nLibs) return;
-  bySize = (uint16_t *)malloc(sizeof(uint16_t) * model->nLibs);
-  if (!bySize) return;
-  uint16_t n = 0;
-  for (uint16_t i = 0; i < model->nLibs; i++) if (model->libs[i].done + model->libs[i].todo) bySize[n++] = i;
-  // insertion sort by total, biggest first (a few hundred items, once per update)
-  for (uint16_t i = 1; i < n; i++) {
-    uint16_t v = bySize[i]; uint32_t tv = model->libs[v].done + model->libs[v].todo; int j = i - 1;
-    while (j >= 0 && model->libs[bySize[j]].done + model->libs[bySize[j]].todo < tv) { bySize[j + 1] = bySize[j]; j--; }
-    bySize[j + 1] = v;
-  }
-}
-
 // ---------- full-screen messages ----------
 void messageScreen(const char *title, const char *l1, const char *l2 = nullptr, const char *l3 = nullptr, float progress = -1) {
   g->fillScreen(C_BG);
@@ -415,7 +378,6 @@ void drawCelebration(int32_t gain) {
 }
 
 void drawInfo() {
-  g->fillScreen(C_BG);
   header("DEVICE INFO", EP_VERSION, C_ACCENT2);
   int y = HDR + 22, step = H > 250 ? 24 : 21, x = 12, w = W - 24;
   char b[64];
@@ -427,20 +389,23 @@ void drawInfo() {
   statRow(x, w, y, "Board", EP_BOARD, C_FG); y += step;
   statRow(x, w, y, "Touch", touchName(), C_FG); y += step;
   snprintf(b, sizeof b, "%lu KB free", (unsigned long)(ESP.getFreeHeap() / 1024)); statRow(x, w, y, "Memory", b, C_FG); y += step;
-  if (fetchError.length() && y < H - 8) { strlcpy(b, fetchError.c_str(), sizeof b); fit(F_SB, b, w - 80); statRow(x, w, y, "Last error", b, C_BAD); }
-  txt(F_TINY, W / 2, H - 6, "tap to close", C_DIM, 1);
-  flush();
+  if (model && model->published && timeValid() && y < H - 14) {
+    struct tm tmv; localtime_r(&model->published, &tmv);
+    strftime(b, sizeof b, "%d %b %H:%M", &tmv); statRow(x, w, y, "Feed published", b, C_FG); y += step;
+  }
+  if (fetchError.length() && y < H - 14) { strlcpy(b, fetchError.c_str(), sizeof b); statRow(x, w, y, "Last error", b, C_BAD); }
+  pageDots();
 }
 
 void drawScreen() {
-  if (!model) return;
+  if (!model && screen != SC_INFO) return;
   g->fillScreen(C_BG);
   switch (screen) {
     case SC_OVERVIEW: drawOverview(); break;
     case SC_HISTORY:  drawHistory(); break;
+    case SC_DAILY:    drawDaily(); break;
     case SC_LIBS:     drawLibs(); break;
-    case SC_SHADER:   drawShader(); break;
-    case SC_MAP:      drawMap(); break;
+    case SC_INFO:     drawInfo(); break;
   }
   flush();
 }
@@ -448,9 +413,8 @@ void drawScreen() {
 // header-only refresh (status text) without redrawing the whole screen
 void drawHeaderOnly() {
   if (!model) return;
-  static const char *titles[SC_COUNT] = {"SYSTEM LIBRARIES", "HISTORY", nullptr, "SHADER RECOMPILER", "EVERY LIBRARY"};
   if (screen != SC_OVERVIEW) return;   // other screens show fixed text on the right
-  header(titles[screen]);
+  header("SYSTEM LIBRARIES");
   if (canvas) canvas->flush();
 }
 
