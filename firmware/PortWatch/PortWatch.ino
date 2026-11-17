@@ -115,6 +115,9 @@ void onTap(int16_t x, int16_t y) {
   }
   lastTapSide = 0;
   if (screen == SC_LIBS) { libMode = (libMode + 1) % 4; drawScreen(); }
+#if EP_GUITION
+  else if (screen == SC_HISTORY) { histRange = (histRange + 1) % 3; drawScreen(); }   // 7 -> 14 -> 30 days
+#endif
   else if (screen == SC_OVERVIEW) { etag = ""; fetchNow(); }
 }
 

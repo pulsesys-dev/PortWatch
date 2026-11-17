@@ -194,17 +194,30 @@ void drawOverview() {
 // Each day with a commit gets a candle that opens at the previous point's % and closes at that
 // day's %. Green = % went up, red = % went down (usually because more functions were declared).
 // Blue bars along the bottom = functions implemented that day.
+// Guition: tap the middle of this screen to switch between 7, 14 and 30 days. The CYD shows 7.
+const uint8_t HIST_RANGES[3] = {7, 14, 30};
+uint8_t histRange = 0;
+int historyDays() {
+#if EP_GUITION
+  return HIST_RANGES[histRange];
+#else
+  return 7;
+#endif
+}
 void drawHistory() {
-  Gains gn = gains();
-  char r[32] = "";
-  if (gn.ok) { char t[16]; fmtSigned(gn.week, t); snprintf(r, sizeof r, "%s functions", t); }
-  header("LAST 7 DAYS  %", gn.ok ? r : nullptr, C_OK);
-  if (!model->hist || model->nHist < 2) { txt(F_S, W / 2, H / 2, "No history yet", C_DIM, 1); pageDots(); return; }
+  const int days = historyDays();
+  char title[24]; snprintf(title, sizeof title, "LAST %d DAYS  %%", days);
+  if (!model->hist || model->nHist < 2) { header(title); txt(F_S, W / 2, H / 2, "No history yet", C_DIM, 1); pageDots(); return; }
   const HistPt *h = model->hist; int n = model->nHist;
-  const int padL = 32, padR = 6, top = HDR + 8, volH = H * 0.12f, bottom = H - 14 - volH - 16;
-  const int cw = W - padL - padR, ch = bottom - top;
+  {   // functions gained over the range shown, in the top bar
+    int k = n - 1; while (k > 0 && h[k - 1].day > h[n - 1].day - days) k--;
+    int base = k > 0 ? k - 1 : 0;
+    char t[16], r[32]; fmtSigned((int32_t)h[n - 1].done - (int32_t)h[base].done, t); snprintf(r, sizeof r, "%s functions", t);
+    header(title, r, C_OK);
+  }
+  int padL = 32; const int padR = 6, top = HDR + 8, volH = H * 0.12f, bottom = H - 14 - volH - 16;
+  int cw = W - padL - padR; const int ch = bottom - top;
   int32_t dLast = h[n - 1].day;
-  const int days = 7;
   int32_t dFirst = dLast - days + 1;
   int first = 0; while (first < n - 1 && h[first].day < dFirst) first++;
   auto pct = [&](int i) { return h[i].total ? 100.0f * h[i].done / h[i].total : 0.0f; };
@@ -220,6 +233,7 @@ void drawHistory() {
   float raw = (hi - lo) / 4, mag = powf(10, floorf(log10f(raw))), nn = raw / mag;
   float step = (nn < 1.5f ? 1 : nn < 3 ? 2 : nn < 7 ? 5 : 10) * mag;
   lo = floorf(lo / step) * step; hi = ceilf(hi / step) * step; if (hi <= lo) hi = lo + step;
+  if (step < 1) { padL = 40; cw = W - padL - padR; }   // room for labels like "39.5%"
   float slot = (float)cw / days;
   auto X = [&](int32_t d) { return padL + (int)((d - dFirst + 0.5f) * slot); };
   auto Y = [&](float v) { return bottom - (int)((v - lo) / (hi - lo) * ch); };

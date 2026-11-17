@@ -12,7 +12,7 @@ A desk display for the **AnyPS5** PS5-emulator project's reimplementation progre
 ## Screens
 **Boards (CYD and Guition):**
 1. **Overview**: ring with % of library functions implemented, functions implemented, gains over 7 and 30 days and the latest day, libraries complete, and the estimate including open PRs.
-2. **Last 7 days**: candle chart. % implemented runs up the side and the last 7 calendar days run across. Each candle opens at the previous day's % and closes at that day's %: green means it went up, red means it went down (usually because newly *declared* functions raised the total). Blue bars show functions implemented that day.
+2. **Last 7 days**: candle chart. On the Guition, **tap the middle** to switch between 7, 14 and 30 days. % implemented runs up the side and the last 7 calendar days run across. Each candle opens at the previous day's % and closes at that day's %: green means it went up, red means it went down (usually because newly *declared* functions raised the total). Blue bars show functions implemented that day.
 3. **Daily progress**: the latest day's gain, big, then one row per day with functions implemented and the change in %. Days without commits are shown dimmed.
 4. **Libraries**: tap the centre of the screen to change the sort: Moved since the last update / Almost done / Most left / Biggest.
 5. **Device info**: IP address, Wi-Fi, signal, board, touch, memory, and when the feed was published. Auto-rotate skips it; double-tap to it or hold the screen for 2 s.
@@ -21,7 +21,7 @@ A desk display for the **AnyPS5** PS5-emulator project's reimplementation progre
 
 **Data use:** the board saves the last feed it loaded and shows it straight away at power-on. Each check asks GitHub "has this changed?" and gets a tiny "no" back most of the time. The full ~2.6 MB `progress.json` is only downloaded when AnyPS5 publishes an update.
 
-When a feed update adds functions, the board shows a full-screen **"+312 functions implemented"** and the CYD's rear LED flashes green.
+When a feed update adds functions, the board shows a full-screen **"+312 functions implemented"** for 8 seconds, and the CYD's rear RGB LED pulses green while it's showing (turn that off on the settings page). The rest of the time the LED is off.
 
 **Touch:** **double-tap** the right side for the next screen and the left side for the previous one. A single tap on the sides does nothing, so brushing the screen won't change page. Tap the centre to change the sort on Libraries, or to check the feed now on Overview. Hold for 2 s to see device info (IP, Wi-Fi, memory, last error). Screens auto-cycle every 20 s and pause for a minute after you touch the screen.
 
