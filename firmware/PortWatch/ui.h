@@ -102,8 +102,7 @@ void header(const char *title, const char *right = nullptr, uint16_t rightCol = 
   if (WiFi.status() != WL_CONNECTED) { r = "no Wi-Fi"; dot = C_BAD; }
   else if (fetching) { r = dlTotal ? String("updating ") + (int)(100.0 * dlBytes / dlTotal) + "%" : String("updating ") + (dlBytes / 1024) + "KB"; dot = C_WARN; }
   else if (fetchError.length()) { r = "feed error"; dot = C_BAD; }
-  else if (model && model->published && timeValid()) r = agoText(time(nullptr) - model->published);
-  else if (lastFetchOk) r = "checked " + agoText((millis() - lastFetchOk) / 1000);
+  // update times live on the Device info screen; the top bar only shows when something's happening or wrong
   if (right && W >= 300) { r = right; dot = rightCol ? rightCol : dot; }
   if (W < 300 && r.length() > 16) r = r.substring(0, 15) + ".";
   int rw = textW(F_TINY, r.c_str());
@@ -383,15 +382,18 @@ void drawInfo() {
   char b[64];
   statRow(x, w, y, "Address", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "not connected", C_FG); y += step;
   statRow(x, w, y, W < 300 ? "Settings" : "Settings page", "portwatch.local", C_ACCENT2); y += step;
-  String ss = WiFi.SSID(); strlcpy(b, ss.c_str(), sizeof b); fit(F_SB, b, w - 80);
-  statRow(x, w, y, "Wi-Fi", b, C_FG); y += step;
-  snprintf(b, sizeof b, "%d dBm", WiFi.RSSI()); statRow(x, w, y, "Signal", b, C_FG); y += step;
+  snprintf(b, sizeof b, "%s  %d dBm", WiFi.SSID().c_str(), WiFi.RSSI());
+  statRow(x, w, y, "Wi-Fi", WiFi.status() == WL_CONNECTED ? b : "not connected", C_FG); y += step;
   statRow(x, w, y, "Board", EP_BOARD, C_FG); y += step;
   statRow(x, w, y, "Touch", touchName(), C_FG); y += step;
   snprintf(b, sizeof b, "%lu KB free", (unsigned long)(ESP.getFreeHeap() / 1024)); statRow(x, w, y, "Memory", b, C_FG); y += step;
   if (model && model->published && timeValid() && y < H - 14) {
     struct tm tmv; localtime_r(&model->published, &tmv);
-    strftime(b, sizeof b, "%d %b %H:%M", &tmv); statRow(x, w, y, "Feed published", b, C_FG); y += step;
+    strftime(b, sizeof b, "%d %b %H:%M", &tmv); statRow(x, w, y, W < 300 ? "Published" : "Feed published", b, C_FG); y += step;
+  }
+  if (y < H - 14) {
+    String c = fetching ? String("checking now") : lastFetchOk ? agoText((millis() - lastFetchOk) / 1000) : String("not yet");
+    statRow(x, w, y, "Last checked", c.c_str(), C_FG); y += step;
   }
   if (fetchError.length() && y < H - 14) { strlcpy(b, fetchError.c_str(), sizeof b); statRow(x, w, y, "Last error", b, C_BAD); }
   pageDots();

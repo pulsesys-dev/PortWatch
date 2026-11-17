@@ -245,7 +245,12 @@ void loop() {
     if (now > celebUntil) { celebUntil = 0; ledSet(0, 0, 0); drawScreen(); }
   } else {
     if (S.cycleSec && now - lastTouch > 60000 && now - lastCycle > S.cycleSec * 1000UL) { lastCycle = now; stepScreen(1, true); }
-    if (now - lastHeader > (fetching ? 1000UL : 30000UL)) { lastHeader = now; drawHeaderOnly(); }
+    static bool wasFetching = false;
+    bool justFinished = wasFetching && !fetching; wasFetching = fetching;
+    if (justFinished || now - lastHeader > (fetching ? 1000UL : 30000UL)) {
+      lastHeader = now;
+      if (screen == SC_INFO) drawScreen(); else drawHeaderOnly();
+    }
   }
 
   pollTouch();
