@@ -2,7 +2,7 @@
 # Builds PortWatch for both boards: the full flash images for the browser flasher, the app-only
 # files for updates over Wi-Fi, the flasher page with both firmwares inside, and the package zip.
 # Used by .github/workflows/build.yml. Also runs locally once arduino-cli, the ESP32 core 3.1.1
-# and the libraries are installed (same commands as the workflow).
+# (ESP32 core 2.0.17) and the libraries are installed (same commands as the workflow).
 #
 #   firmware/tools/build_release.sh      -> build/release/  and  build/site/ (for GitHub Pages)
 #

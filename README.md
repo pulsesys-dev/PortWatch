@@ -51,7 +51,7 @@ This produces `firmware/out/`:
 - `PortWatch-Flasher.html`: the flasher with both firmwares baked in, as one file you can hand to people
 
 ### Arduino IDE 2
-Libraries (Library Manager): **GFX Library for Arduino 1.5.0** (Moon On Our Nation), **ArduinoJson 7.x**, **XPT2046_Touchscreen** (Paul Stoffregen). Core: **esp32 by Espressif 3.1.x**.
+Libraries (Library Manager): **GFX Library for Arduino 1.4.9** (Moon On Our Nation), **ArduinoJson 7.x**, **XPT2046_Touchscreen** (Paul Stoffregen). Core: **esp32 by Espressif 2.0.17** (the same versions LapLogic uses).
 
 | | CYD | Guition JC4827W543 |
 |---|---|---|

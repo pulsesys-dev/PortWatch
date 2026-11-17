@@ -131,9 +131,11 @@ void handleSave() {
 #endif
   S.invert = server.hasArg("invert");
   saveSettings();
+  panel->invertDisplay(S.invert);
   configTzTime(S.tz.c_str(), "pool.ntp.org", "time.google.com");
   if (feedChanged) { etag = ""; fetchNow(); }
-  if (S.rotation != oldRot || S.cydPanel != oldPanel || S.touchMode != oldTouch || S.invert != oldInv) {
+  (void)oldInv;
+  if (S.rotation != oldRot || S.cydPanel != oldPanel || S.touchMode != oldTouch) {
     redirectHome("Saved. Restarting to apply the display change…"); rebootPending = true;
   } else redirectHome();
   if (!(S.screenMask & (1 << screen))) screen = SC_OVERVIEW;

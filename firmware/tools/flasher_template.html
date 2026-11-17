@@ -77,6 +77,7 @@ pre{background:#03050a;border:1px solid var(--line);border-radius:10px;padding:1
       <span>Orientation</span><span style="display:flex;gap:8px"><select id="rotSel" style="flex:1" disabled>
         <option value="0">Landscape</option><option value="1">Landscape, flipped</option><option value="2">Portrait</option><option value="3">Portrait, flipped</option></select>
         <button class="ghost" id="rotBtn" disabled>Apply</button></span>
+      <span>Colours</span><label class="chk"><input type="checkbox" id="invChk" disabled> Invert colours (tick this if the screen looks like a photo negative)</label>
       <span>Touch</span><span style="display:flex;gap:8px;align-items:center"><button class="ghost" id="calBtn" disabled>Calibrate touch</button><span class="note" id="touchNote">Resistive screens (CYD, Guition R) need calibrating.</span></span>
     </div>
     <div class="status" id="dispStatus"></div>
@@ -303,8 +304,11 @@ function waitLine(pred, ms){
 const sendLine = t => send(new TextEncoder().encode(t + "\n"));
 async function displayInfo(){
   const p = waitLine(l => l.startsWith("PW:INFO ") ? JSON.parse(l.slice(8)) : undefined, 2500);
+  const inv = waitLine(l => l.startsWith("PW:INV ") ? l.slice(7) === "1" : undefined, 2500);
   await sendLine("PW:INFO");
   const info = await p;
+  try { $("invChk").checked = await inv; } catch {}
+  $("invChk").disabled = false;
   $("rotSel").value = String(info.rotation); $("rotSel").disabled = $("rotBtn").disabled = false;
   const res = info.touch === "resistive";
   $("calBtn").disabled = !res;
@@ -386,6 +390,14 @@ async function scan(){
 }
 setFlashButtons();
 $("scanBtn").onclick = scan;
+$("invChk").onchange = async () => {
+  const st = $("dispStatus"), on = $("invChk").checked ? 1 : 0;
+  try {
+    const ok = waitLine(l => l.startsWith("PW:OK INV") ? true : undefined, 4000);
+    await sendLine("PW:INV=" + on); await ok;
+    st.className = "status ok"; st.textContent = on ? "Colours inverted." : "Colours back to normal.";
+  } catch (e) { st.className = "status err"; st.textContent = "Couldn't change colours: " + e.message; }
+};
 $("rotBtn").onclick = async () => {
   const st = $("dispStatus"), r = $("rotSel").value;
   st.className = "status"; st.textContent = "Setting orientation…";

@@ -10,8 +10,8 @@
     ESP32     -> ESP32-2432S028R "Cheap Yellow Display" 2.8"  (Arduino IDE: "ESP32 Dev Module")
     ESP32-S3  -> Guition JC4827W543 4.3", C or R              (Arduino IDE: "ESP32S3 Dev Module", OPI PSRAM)
 
-  Libraries: Arduino_GFX_Library 1.5.x, ArduinoJson 7.x, XPT2046_Touchscreen
-  Core: esp32 by Espressif 3.x
+  Libraries: GFX Library for Arduino 1.4.9, ArduinoJson 7.x, XPT2046_Touchscreen
+  Core: esp32 by Espressif 2.0.17 (the versions LapLogic runs on these boards)
 
   Touch: right third = next screen, left third = previous, middle = screen action
          (Libraries: change sort; Overview: check feed now). Hold 2 s = device info.
@@ -126,10 +126,15 @@ void handleCommand(const String &line) {
     Serial.printf("PW:INFO {\"name\":\"%s\",\"version\":\"%s\",\"board\":\"%s\",\"touch\":\"%s\",\"rotation\":%u,\"calibrated\":%s,\"wifi\":%s}\n",
                   EP_NAME, EP_VERSION, EP_BOARD, touchKind == TOUCH_XPT ? "resistive" : touchKind == TOUCH_GT911 ? "capacitive" : "none",
                   S.rotation, cal.magic == CAL_MAGIC ? "true" : "false", WiFi.status() == WL_CONNECTED ? "true" : "false");
+    Serial.printf("PW:INV %d\n", S.invert ? 1 : 0);
   } else if (line == "PW:CAL") {
     if (!touchIsResistive()) { Serial.println("PW:ERR not a resistive screen"); return; }
     Serial.println("PW:OK CAL started");
     calibratePending = true;
+  } else if (line.startsWith("PW:INV=")) {     // invert colours, applied straight away
+    S.invert = line.substring(7).toInt() != 0; saveSettings();
+    panel->invertDisplay(S.invert);
+    Serial.printf("PW:OK INV %d\n", S.invert ? 1 : 0);
   } else if (line.startsWith("PW:ROT=")) {
     int r = line.substring(7).toInt();
     if (r < 0 || r > 3) { Serial.println("PW:ERR rotation 0-3"); return; }
