@@ -195,12 +195,13 @@ void setup() {
   improv::urlFn = deviceUrl;
   improv::cmdFn = handleCommand;
 
-  webBegin();
+  // Wi-Fi has to be running before the web server starts (the network stack starts with it)
   if (S.ssid.length()) {
     drawLoading();
     if (connectWifi(S.ssid, S.pass, 20000)) onConnected();
     else { startAP(); WiFi.begin(S.ssid.c_str(), S.pass.c_str()); }   // keep trying the saved network in the background
   } else startAP();
+  webBegin();
   fetchBegin();
   wasConnected = WiFi.status() == WL_CONNECTED;
   drawLoading();
